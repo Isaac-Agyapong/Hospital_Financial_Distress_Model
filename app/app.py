@@ -66,6 +66,7 @@ def booster():
 
 
 SCORES, HIST, META, LIMITS = load()
+LOC = pd.read_csv(DATA / "hospital_locations.csv", dtype={"ccn": str})
 BT, TRACK = test_results()
 N = len(SCORES)
 FEATURES = META["numeric"] + META["categorical"]
@@ -190,6 +191,33 @@ h3 {{ font-size: 1.02rem !important; font-weight: 700 !important; color: {INK}; 
 .stTabs [data-baseweb="tab-list"] {{ gap: 6px; }}
 .stTabs [data-baseweb="tab"] {{ font-weight: 600; }}
 div[data-testid="stMetricValue"] {{ font-weight: 800; }}
+.hero {{ position: relative; overflow: hidden; border-radius: 24px; padding: 30px 34px 28px 34px; margin-top: 4px;
+    background: radial-gradient(1200px 400px at 85% -20%, #6A62E0 0%, rgba(106,98,224,0) 60%),
+                linear-gradient(135deg, #14124A 0%, #221E7A 50%, #2F28A8 100%);
+    box-shadow: 0 18px 40px rgba(34, 30, 122, 0.28); }}
+.hero .pulse {{ position: absolute; left: 0; right: 0; bottom: 6px; width: 100%; height: 120px; opacity: .55; }}
+.hero .pulse path {{ stroke-dasharray: 2600; stroke-dashoffset: 2600; animation: beat 5.5s ease-in-out infinite; }}
+@keyframes beat {{ 0% {{ stroke-dashoffset: 2600; }} 55% {{ stroke-dashoffset: 0; }} 100% {{ stroke-dashoffset: -2600; }} }}
+.hero-grid {{ position: relative; display: grid; grid-template-columns: 1.7fr 1fr; gap: 28px; align-items: center; }}
+.hero-eyebrow {{ color: #B9B5FF; font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
+.hero-title {{ color: white; font-size: 34px; font-weight: 800; line-height: 1.12; letter-spacing: -0.03em; margin: 10px 0 10px 0; }}
+.hero-title span {{ color: #FF9A7A; }}
+.hero-sub {{ color: #D6D4FF; font-size: 14.5px; line-height: 1.55; max-width: 640px; }}
+.hero-stats {{ display: grid; gap: 10px; }}
+.hs {{ background: rgba(255,255,255,.08); border: 1px solid rgba(255,255,255,.14); border-radius: 16px;
+    padding: 10px 16px; backdrop-filter: blur(6px); }}
+.hs b {{ color: white; font-size: 24px; font-weight: 800; letter-spacing: -0.02em; }}
+.hs b small {{ font-size: 14px; font-weight: 700; color: #D6D4FF; }}
+.hs span {{ display: block; color: #C9C7F5; font-size: 12.5px; }}
+[class*="st-key-night-card"] {{ border-radius: 22px; padding: 18px 20px 6px 20px;
+    background: radial-gradient(900px 380px at 50% 0%, #26236B 0%, #121131 70%);
+    box-shadow: 0 14px 36px rgba(18, 17, 49, 0.35); }}
+.night-head {{ display: flex; justify-content: space-between; align-items: flex-end; gap: 16px; }}
+.night-eyebrow {{ color: #9D98FF; font-size: 11.5px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }}
+.night-title {{ color: white; font-size: 20px; font-weight: 800; letter-spacing: -0.02em; margin-top: 2px; }}
+.night-note {{ color: #B5B2E8; font-size: 12.5px; text-align: right; }}
+.night-note b {{ color: #FF9A7A; }}
+[class*="st-key-card-kpi"] {{ border-top: 3px solid {INDIGO_XL}; }}
 .foot {{ color: {INK_3}; font-size: 12px; margin-top: 18px; }}
 </style>""", unsafe_allow_html=True)
 
@@ -264,19 +292,77 @@ def hospital_search(key):
 
 
 # ================================================================================================= pages
+def hero():
+    """Deep indigo banner with an animated heartbeat line and the three headline numbers."""
+    n_high = int((SCORES.risk_level == "High").sum())
+    hm, hr = int(EARLY.loc["XGBoost", "hits"]), int(EARLY.loc["Rule: lowest profit margin first", "hits"])
+    html = f"""
+<div class="hero">
+  <svg class="pulse" viewBox="0 0 1200 160" preserveAspectRatio="none">
+    <defs><linearGradient id="pg" x1="0" x2="1"><stop offset="0" stop-color="#7C74FF" stop-opacity="0"/>
+      <stop offset=".45" stop-color="#A5A1EA"/><stop offset=".8" stop-color="{CORAL}"/>
+      <stop offset="1" stop-color="{CORAL}" stop-opacity="0"/></linearGradient></defs>
+    <path d="M0,95 L300,95 L340,95 L360,60 L385,130 L410,30 L440,120 L460,95 L700,95 L730,95 L750,70 L770,112
+             L795,48 L820,105 L840,95 L1200,95" fill="none" stroke="url(#pg)" stroke-width="3" stroke-linecap="round"
+             stroke-linejoin="round"/>
+  </svg>
+  <div class="hero-grid">
+    <div>
+      <div class="hero-eyebrow">Outlook 2024-2025 · machine learning early warning</div>
+      <div class="hero-title">{n_high} US hospitals are at <span>high risk</span> of losing money two years in a row</div>
+      <div class="hero-sub">Every hospital's latest financial report, scored for the chance of losing money in both of the
+        next two years. Explore the map, open any hospital, and test what would change its outlook.</div>
+    </div>
+    <div class="hero-stats">
+      <div class="hs"><b>{N:,}</b><span>hospitals scored</span></div>
+      <div class="hs"><b>{HIT}<small> in 100</small></b><span>high-risk picks proved right in the test</span></div>
+      <div class="hs"><b>+{hm - hr}</b><span>more early warnings than the best simple rule</span></div>
+    </div>
+  </div>
+</div>"""
+    # one line: Markdown would show indented HTML lines as a code block
+    st.markdown(" ".join(line.strip() for line in html.splitlines()), unsafe_allow_html=True)
+
+
+def night_map(d):
+    """Every hospital as a point of light at its real location; high risk glows coral. Click a dot to open it."""
+    m = d.merge(LOC, on="ccn", how="left").dropna(subset=["lat"])
+    fig = go.Figure()
+    layers = [("Lower", 3.2, 0.40, "#8F8BEA"), ("Elevated", 5.0, 0.80, AMBER), ("High", 7.0, 0.95, CORAL)]
+    for L, size, alpha, colour in layers:
+        s = m[m.risk_level == L]
+        if L == "High":     # soft halo behind the high-risk points
+            fig.add_scattergeo(lon=s.lon, lat=s.lat, mode="markers", hoverinfo="skip", showlegend=False,
+                               marker=dict(size=16, color=colour, opacity=0.13, line=dict(width=0)))
+        fig.add_scattergeo(
+            lon=s.lon, lat=s.lat, mode="markers", name=f"{L} risk",
+            marker=dict(size=size, color=colour, opacity=alpha, line=dict(width=0)),
+            customdata=np.stack([s.label, s.risk_level, s.risk_rank, 100 * s.total_margin], axis=1),
+            hovertemplate="<b>%{customdata[0]}</b><br>%{customdata[1]} risk · #%{customdata[2]:,}<br>"
+                          "profit margin %{customdata[3]:.1f}%<extra></extra>")
+    fig.update_geos(scope="usa", projection_type="albers usa", bgcolor="rgba(0,0,0,0)", showland=True,
+                    landcolor="#1C1B4D", showsubunits=True, subunitcolor="#34327C", subunitwidth=0.6,
+                    showcountries=False, showlakes=False, showcoastlines=False)
+    fig.update_layout(height=470, margin=dict(l=0, r=0, t=0, b=0), paper_bgcolor="rgba(0,0,0,0)",
+                      legend=dict(orientation="h", x=0.02, y=0.02, font=dict(color="#C9C7F5", size=12),
+                                  bgcolor="rgba(0,0,0,0)", itemsizing="constant"),
+                      hoverlabel=dict(bgcolor="#16162A", bordercolor="#3F37C9", font=dict(color="white",
+                                                                                         family="Plus Jakarta Sans")))
+    return fig
+
+
 def overview():
-    heading("Outlook 2024-2025", "Which hospitals are heading for financial trouble?",
-            f"Every US hospital's latest financial report, scored by a machine learning model for the chance of "
-            f"losing money in <b>both</b> of the next two years. Tested on years it never saw, {HIT} in 100 of its "
-            f"high-risk picks did.")
-    st.session_state.setdefault("f_state", "All states")
-    # a click on the map (stored by the chart from the last run) sets the state filter before it is drawn
-    ev = st.session_state.get("map")
+    hero()
+    # clicks remembered from the last run: a dot on the night map opens that hospital, a row in the table too
+    ev = st.session_state.get("night")
     pts = (ev or {}).get("selection", {}).get("points", []) if ev else []
-    loc = pts[0].get("location") if pts else None
-    if loc and loc != st.session_state.get("map_applied"):
-        st.session_state["f_state"] = loc
-        st.session_state["map_applied"] = loc
+    if pts and pts[0].get("customdata"):
+        pick = pts[0]["customdata"][0]
+        if pick != st.session_state.get("night_applied"):
+            st.session_state["night_applied"] = pick
+            open_profile(pick)
+    st.session_state.setdefault("f_state", "All states")
+    st.write("")
     with st.container(key="filters"):
         c = st.columns([1.2, 1.3, 1.6, 1.2])
         states = ["All states"] + sorted(SCORES.state_abbrev.unique())
@@ -302,70 +388,92 @@ def overview():
     c = st.columns(4)
     kpi(c[0], "n", "Hospitals in view", f"{n:,}", "latest report, mostly 2023", INK)
     kpi(c[1], "h", "High risk", f"{lv.get('High', 0):,}",
-        f"{100 * lv.get('High', 0) / n:.0f}% of view · {TRACK['High']} in 100 of these lost money in the test", CORAL)
+        f"{100 * lv.get('High', 0) / n:.0f}% of view · {TRACK['High']} in 100 like these lost money in the test", CORAL)
     kpi(c[2], "e", "Elevated risk", f"{lv.get('Elevated', 0):,}",
         f"{100 * lv.get('Elevated', 0) / n:.0f}% of view · {TRACK['Elevated']} in 100 in the test", AMBER)
     kpi(c[3], "m", "Typical profit margin", f"{100 * d.total_margin.median():.1f}%",
         f"{100 * d.loss.mean():.0f}% of these hospitals lost money in their latest year", INDIGO)
     st.write("")
-    left, right = st.columns([1.45, 1])
-    with left, card("map"):
-        st.markdown("### Share of hospitals at high risk, by state")
-        st.markdown('<div class="muted">Click a state to focus on it</div>', unsafe_allow_html=True)
-        g = (d.groupby("state_abbrev").agg(n=("ccn", "size"), high=("risk_level", lambda s: (s == "High").sum()))
-             .reset_index().assign(share=lambda x: 100 * x.high / x.n))
-        fig = go.Figure(go.Choropleth(
-            locations=g.state_abbrev, z=g.share, locationmode="USA-states", marker_line_color="white",
-            marker_line_width=1.2, zmin=0, zmax=30,
-            colorscale=[[0, "#F1F0FC"], [0.3, INDIGO_L], [0.65, "#EE8D6E"], [1, CORAL]],
-            colorbar=dict(ticksuffix="%", thickness=10, len=0.62, x=0.98, outlinewidth=0, tickfont=dict(size=11)),
-            customdata=np.stack([g.n, g.high], axis=1),
-            hovertemplate="<b>%{location}</b><br>%{z:.0f}% at high risk<br>%{customdata[1]} of %{customdata[0]} "
-                          "hospitals<extra></extra>"))
-        fig.update_geos(scope="usa", bgcolor="rgba(0,0,0,0)", showlakes=False)
-        plot(styled(fig, 330), on_select="rerun", selection_mode="points", key="map")
-    with right, card("mix"):
-        st.markdown("### Risk mix by owner and area")
-        st.markdown('<div class="muted">Share of each group in each risk level</div>', unsafe_allow_html=True)
-        groups = [("Nonprofit", d.ownership == "Nonprofit"), ("For-profit", d.ownership == "For-profit"),
-                  ("Government", d.ownership == "Government"), ("Urban", d.rural_urban == "Urban"),
-                  ("Rural", d.rural_urban == "Rural")]
-        rows = [(name, m.sum(), *[100 * (d[m].risk_level == L).mean() if m.sum() else 0 for L in LEVELS])
-                for name, m in groups if m.sum() > 0]
-        mix = pd.DataFrame(rows, columns=["group", "n"] + LEVELS)[::-1]
-        fig = go.Figure()
-        for L in LEVELS:
-            fig.add_bar(y=mix.group, x=mix[L], name=L, orientation="h", marker_color=LEVEL_COLOUR[L],
-                        text=[f"{v:.0f}%" if v >= 9 else "" for v in mix[L]], textposition="inside",
-                        insidetextfont=dict(color="white", size=11.5),
-                        hovertemplate="%{y}: %{x:.0f}% " + L.lower() + "<extra></extra>")
-        fig.update_layout(barmode="stack", bargap=0.35,
-                          legend=dict(orientation="h", y=-0.12, x=0, font=dict(size=12)))
-        fig.update_xaxes(visible=False, range=[0, 100])
-        plot(styled(fig, 330, legend=True))
+    with st.container(key="night-card"):
+        st.markdown(f'<div class="night-head"><div><div class="night-eyebrow">The night map</div>'
+                    f'<div class="night-title">{n:,} hospitals, each a point of light</div></div>'
+                    f'<div class="night-note">Coral = high risk · hover for details · <b>click a dot to open the hospital</b>'
+                    f'</div></div>', unsafe_allow_html=True)
+        plot(night_map(d), on_select="rerun", selection_mode="points", key="night")
     st.write("")
-    with card("list"):
-        top = st.columns([3, 1.3])
-        top[0].markdown(f"### Highest-risk hospitals in view")
+    left, right = st.columns([1, 1.25])
+    with left, card("sun"):
+        st.markdown("### Who is at risk")
+        st.markdown('<div class="muted">Owner, then rural or urban, then risk level. Click a ring to zoom in.</div>',
+                    unsafe_allow_html=True)
+        g = d.groupby(["ownership", "rural_urban", "risk_level"]).size().reset_index(name="n")
+        ids, labels, parents, values, colours = [], [], [], [], []
+        own_col = {"Nonprofit": INDIGO, "For-profit": "#6A62E0", "Government": "#2B2596"}
+        for o, go_ in g.groupby("ownership"):
+            ids.append(o); labels.append(o); parents.append(""); values.append(go_.n.sum()); colours.append(own_col.get(o, INDIGO))
+            for a, ga in go_.groupby("rural_urban"):
+                ids.append(f"{o}/{a}"); labels.append(a); parents.append(o); values.append(ga.n.sum())
+                colours.append(INDIGO_L if a == "Urban" else "#C9C6F4")
+                for _, r in ga.iterrows():
+                    ids.append(f"{o}/{a}/{r.risk_level}"); labels.append(r.risk_level); parents.append(f"{o}/{a}")
+                    values.append(r.n); colours.append(LEVEL_COLOUR[r.risk_level])
+        fig = go.Figure(go.Sunburst(ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
+                                    marker=dict(colors=colours, line=dict(color="white", width=1.5)),
+                                    insidetextorientation="radial", textfont=dict(size=12),
+                                    hovertemplate="<b>%{label}</b><br>%{value:,} hospitals<br>%{percentParent:.0%} of "
+                                                  "%{parent}<extra></extra>"))
+        plot(styled(fig, 400))
+    with right, card("list"):
+        top = st.columns([1.7, 1.6])
+        top[0].markdown("### Highest-risk hospitals in view")
         top[0].markdown('<div class="muted">Select a row to open the hospital\'s profile</div>', unsafe_allow_html=True)
         lvl = top[1].segmented_control("Show", LEVELS, default="High", key="f_level", label_visibility="collapsed")
         t = d[d.risk_level == lvl] if lvl else d
-        table = t.assign(margin=100 * t.total_margin, why=t.reason_1.str.capitalize())[
-            ["label", "risk_level", "percentile", "margin", "loss_streak", "why"]].head(300)
+        table = t.assign(margin=100 * t.total_margin)[["label", "percentile", "margin", "loss_streak"]].head(300)
         ev = st.dataframe(
             table, hide_index=True, use_container_width=True, height=360, on_select="rerun",
             selection_mode="single-row", key="table",
             column_config={
                 "label": st.column_config.TextColumn("Hospital", width="large"),
-                "risk_level": st.column_config.TextColumn("Risk"),
-                "percentile": st.column_config.ProgressColumn("Risk percentile", min_value=0, max_value=100, format="%.0f"),
-                "margin": st.column_config.NumberColumn("Profit margin", format="%.1f%%"),
-                "loss_streak": st.column_config.NumberColumn("Years losing money"),
-                "why": st.column_config.TextColumn("Biggest factor", width="medium")})
+                "percentile": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
+                "margin": st.column_config.NumberColumn("Margin", format="%.1f%%"),
+                "loss_streak": st.column_config.NumberColumn("Years losing")})
         rows = ev.selection.rows if ev is not None else []
         if rows:
             open_profile(table.iloc[rows[0]].label)
     footer()
+
+
+def swarm(h):
+    """All hospitals as dots along the model's risk score, spread vertically by how crowded that score is (a
+    beeswarm-like 'comet': most hospitals are low risk, a long tail runs to high risk). This hospital is called out."""
+    rng = np.random.default_rng(3)
+    x = 100 * SCORES.risk.to_numpy()
+    grid = np.linspace(0, 100, 201)
+    dens = np.exp(-((x[:, None] - grid[None, :]) / 2.5) ** 2).sum(axis=0)
+    width = np.interp(x, grid, dens / dens.max())
+    y = rng.uniform(-1, 1, len(x)) * (0.12 + 2.3 * width ** 0.6)
+    fig = go.Figure()
+    for L in LEVELS[::-1]:
+        m = (SCORES.risk_level == L).to_numpy()
+        fig.add_scattergl(x=x[m], y=y[m], mode="markers", name=f"{L} risk", hoverinfo="skip",
+                          marker=dict(size=4.2, color=LEVEL_COLOUR[L], opacity=0.5 if L == "Lower" else 0.8))
+    hx = 100 * h.risk
+    fig.add_scatter(x=[hx], y=[0], mode="markers", showlegend=False, hoverinfo="skip",
+                    marker=dict(size=34, color=LEVEL_COLOUR[h.risk_level], opacity=0.2))
+    fig.add_scatter(x=[hx], y=[0], mode="markers", showlegend=False, hoverinfo="skip",
+                    marker=dict(size=15, color=LEVEL_COLOUR[h.risk_level], line=dict(color="white", width=3)))
+    fig.add_annotation(x=hx, y=0, ax=0, ay=-78, text=f"<b>{h['name'][:32]}</b><br>score {hx:.0f} · #{int(h.risk_rank):,}",
+                       showarrow=True, arrowhead=0, arrowwidth=1.5, arrowcolor=INK, bgcolor="white",
+                       bordercolor=LINE, borderpad=6, font=dict(size=12, color=INK, family="Plus Jakarta Sans"))
+    for xv, lab in [(100 * Q70, "elevated"), (100 * Q90, "high")]:
+        fig.add_vline(x=xv, line_color=INK_3, line_dash="dot", line_width=1)
+        fig.add_annotation(x=xv, y=-2.9, text=f"{lab} risk from here", showarrow=False, xanchor="left",
+                           font=dict(size=11, color=INK_3))
+    fig.update_xaxes(range=[-1, 101], title="model risk score (0-100)", showgrid=False, zeroline=False)
+    fig.update_yaxes(visible=False, range=[-3.1, 3.4])
+    fig.update_layout(legend=dict(orientation="h", y=1.1, x=0))
+    return styled(fig, 340, legend=True)
 
 
 def profile():
@@ -400,6 +508,12 @@ def profile():
     kpi(c[3], "tr", "Track record of this level", f"{TRACK[h.risk_level]} in 100",
         f"{h.risk_level.lower()}-risk hospitals that then lost money two years (test)", LEVEL_COLOUR[h.risk_level])
     st.write("")
+    with card("swarm"):
+        st.markdown("### Where it sits among all US hospitals")
+        st.markdown(f'<div class="muted">Each dot is one of {N:,} hospitals, placed by its risk score. Most are low risk; '
+                    f'a long tail runs toward trouble.</div>', unsafe_allow_html=True)
+        plot(swarm(h))
+    st.write("")
     tabs = st.tabs(["Why this score", "Profit history", "Compared with peers"])
     with tabs[0], card("why"):
         top = contrib.reindex(contrib.abs().sort_values(ascending=False).index).head(8)[::-1]
@@ -432,15 +546,6 @@ def profile():
         st.markdown(f"### Where it sits among all {N:,} hospitals")
         st.markdown(f'<div class="muted">Each hospital\'s risk percentile. The marker shows {h["name"]}.</div>',
                     unsafe_allow_html=True)
-        fig = go.Figure(go.Histogram(x=SCORES.percentile, nbinsx=50, marker_color=INDIGO_XL,
-                                     marker_line=dict(color=INDIGO_L, width=0.5), hoverinfo="skip"))
-        fig.add_vrect(x0=70, x1=90, fillcolor=LEVEL_BG["Elevated"], opacity=0.6, line_width=0, layer="below")
-        fig.add_vrect(x0=90, x1=100, fillcolor=LEVEL_BG["High"], opacity=0.8, line_width=0, layer="below")
-        fig.add_vline(x=h.percentile, line_color=LEVEL_COLOUR[h.risk_level], line_width=3,
-                      annotation_text=f"{h['name'][:28]}", annotation_position="top")
-        fig.update_xaxes(title="risk percentile (100 = highest risk)", range=[0, 100])
-        fig.update_yaxes(visible=False)
-        plot(styled(fig, 260))
         c = st.columns(3)
         c[0].metric(f"{h.hospital_type} hospitals in {h.state_abbrev}", f"{len(peers):,}")
         c[1].metric("Their typical profit margin", f"{100 * peers.total_margin.median():.1f}%")
