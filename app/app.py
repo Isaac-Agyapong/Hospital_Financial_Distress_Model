@@ -981,28 +981,24 @@ def performance():
     st.write("")
     left, right = st.columns([1.2, 1])
     with left, card("perf_years"):
-        section("timeline", "Right picks in the top 10%, every test year",
-                "Share of flagged hospitals that went on to lose money in both of the next two years")
-        names = {"Rule: lowest profit margin first": ("Rule: thinnest margin", "#DDD8CF", 2.5),
-                 "Logistic regression": ("Logistic regression", INDIGO_L, 2.5),
-                 "Rule: lost money 2+ years in a row": ("Rule: already losing 2 years", "#B7AFA3", 2.5),
-                 "XGBoost": ("Machine learning", INDIGO, 4.5)}
+        section("bar_chart", "Machine learning matched or beat the best rule every year, and far beat picking at random",
+                "Of the hospitals each method flagged, how many in 100 went on to lose money in both of the next two years")
+        yrs = sorted(b.test_year.unique())
+        xs = [f"{y} reports" for y in yrs]
+        ml = [100 * b[(b.model == "XGBoost") & (b.test_year == y)].precision_top.iloc[0] for y in yrs]
+        rules = b[b.model.str.startswith("Rule")]
+        best = [100 * rules[rules.test_year == y].precision_top.max() for y in yrs]
+        rnd = [100 * b[(b.model == "XGBoost") & (b.test_year == y)].base_rate.iloc[0] for y in yrs]
         fig = go.Figure()
-        base = b[b.model == "XGBoost"].sort_values("test_year")
-        xs = base.test_year.astype(str) + " report"
-        fig.add_bar(x=xs, y=100 * base.base_rate, name="All hospitals (base rate)", marker=dict(color="#EEEDF6", cornerradius=8),
-                    hovertemplate="base rate %{y:.0f} in 100<extra></extra>")
-        for mname, (lab, colr, w) in names.items():
-            s = b[b.model == mname].sort_values("test_year")
-            fig.add_scatter(x=xs, y=100 * s.precision_top, name=lab, mode="lines+markers",
-                            line=dict(color=colr, width=w, shape="spline"), marker=dict(size=9 if mname == "XGBoost" else 7),
-                            fill="tonexty" if mname == "XGBoost" else None, fillcolor="rgba(63,55,201,.10)",
-                            hovertemplate=lab + ": %{y:.0f} in 100<extra></extra>")
-        last = b[b.model == "XGBoost"].sort_values("test_year").iloc[-1]
-        fig.add_annotation(x=xs.iloc[-1], y=100 * last.precision_top, text=f"<b>{100 * last.precision_top:.0f}</b>",
-                           showarrow=False, yshift=16, font=dict(color=INDIGO, size=15))
-        fig.update_yaxes(ticksuffix="%", gridcolor=LINE, range=[0, 82])
-        fig.update_layout(legend=dict(orientation="h", y=-0.2), bargap=0.45)
+        for name, vals, colr, tc in [("Machine learning", ml, INDIGO, INDIGO), ("Best rule of thumb", best, "#C9C1B4", "#7D766B"),
+                                     ("Picking at random", rnd, "#E6E4F0", INK_3)]:
+            fig.add_bar(x=xs, y=vals, name=name, marker=dict(color=colr, cornerradius=7),
+                        text=[f"<b>{v:.0f}</b>" for v in vals], textposition="outside", textfont=dict(size=13, color=tc),
+                        hovertemplate=name + ": %{y:.0f} in 100<extra></extra>")
+        fig.update_yaxes(visible=False, range=[0, 86])
+        fig.update_xaxes(tickfont=dict(size=13))
+        fig.update_layout(barmode="group", bargap=0.28, bargroupgap=0.08,
+                          legend=dict(orientation="h", y=-0.14, x=0.5, xanchor="center", font=dict(size=12.5)))
         plot(styled(fig, 400, legend=True))
     with right, card("perf_levels"):
         section("grid_view", "Out of every 100 hospitals in each group",
