@@ -972,8 +972,8 @@ def performance():
     c = st.columns(4)
     kpi(c[0], "p1", "High-risk picks that were right", f"{HIT} in 100", "2021 reports, outcome 2022-2023", INDIGO,
         "target", ring_svg(HIT, INDIGO, text=f"{HIT}", track=INDIGO_XL), 0)
-    kpi(c[1], "p2", "Best rule of thumb", f"{rule} in 100", "already lost money 2 years running", "#8A8478",
-        "rule", ring_svg(rule, "#8A8478", text=f"{rule}", track="#EFEDE8"), 1)
+    kpi(c[1], "p2", "Best rule of thumb", f"{rule} in 100", "already lost money 2 years running", "#E58A1F",
+        "rule", ring_svg(rule, "#F29B38", text=f"{rule}", track="#FDEBD5"), 1)
     kpi(c[2], "p3", "Early warnings caught", f"+{hm - hr}", f"{hm} vs {hr} among hospitals still making money", TEAL,
         "notifications_active", bars, 2)
     kpi(c[3], "p4", "Ranking accuracy (ROC-AUC)", f"{auc:.2f}", f"best rule {auc_rule:.2f} · 0.5 = guessing", INDIGO_D,
@@ -990,8 +990,8 @@ def performance():
         best = [100 * rules[rules.test_year == y].precision_top.max() for y in yrs]
         rnd = [100 * b[(b.model == "XGBoost") & (b.test_year == y)].base_rate.iloc[0] for y in yrs]
         fig = go.Figure()
-        for name, vals, colr, tc in [("Machine learning", ml, INDIGO, INDIGO), ("Best rule of thumb", best, "#C9C1B4", "#7D766B"),
-                                     ("Picking at random", rnd, "#E6E4F0", INK_3)]:
+        for name, vals, colr, tc in [("Machine learning", ml, INDIGO, INDIGO), ("Best rule of thumb", best, "#F29B38", "#D97F16"),
+                                     ("Picking at random", rnd, "#9CA3AF", "#6B7280")]:
             fig.add_bar(x=xs, y=vals, name=name, marker=dict(color=colr, cornerradius=7),
                         text=[f"<b>{v:.0f}</b>" for v in vals], textposition="outside", textfont=dict(size=13, color=tc),
                         hovertemplate=name + ": %{y:.0f} in 100<extra></extra>")
