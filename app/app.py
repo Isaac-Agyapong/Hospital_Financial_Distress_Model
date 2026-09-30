@@ -967,20 +967,21 @@ def compare():
         return
     d = SCORES.set_index("label").loc[picks].reset_index()
     cols = st.columns(len(d))
-    palette = [INDIGO, CORAL, TEAL, AMBER]
+    palette = [INDIGO, "#C2338A", "#0F9D8A", "#2B8CD6"]    # one identity colour per hospital (not risk colours)
+    tint = ["#ECEBFB", "#F9E3EF", "#DDF3EF", "#DFEEFA"]
     for i, (col, (_, h)) in enumerate(zip(cols, d.iterrows())):
         lc = LEVEL_COLOUR[h.risk_level]
         hh = HIST[HIST.ccn == h.ccn].sort_values("fiscal_year")
         with col:
-            html(f"""<div class="cmp" style="--c:{lc};animation-delay:{0.08 * i:.2f}s">
+            html(f"""<div class="cmp" style="--c:{palette[i]};animation-delay:{0.08 * i:.2f}s">
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
                 <div><div class="cmp-name"><span style="color:{palette[i]}">●</span> {h["name"]}</div>
                 <div class="muted" style="margin:2px 0 8px 0">{h.city}, {h.state_abbrev} · {h.ownership}</div>{badge(h.risk_level)}</div>
-                {ring_svg(h.percentile, lc, size=78, stroke=8, text=f"{h.percentile:.0f}", sub="risk rating",
-                          track=LEVEL_BG[h.risk_level])}</div>
+                {ring_svg(h.percentile, palette[i], size=78, stroke=8, text=f"{h.percentile:.0f}", sub="risk rating",
+                          track=tint[i])}</div>
                 <div style="font-size:26px;font-weight:800;color:{INK};margin:10px 0 2px 0">#{int(h.risk_rank):,}
                 <span class="muted" style="font-size:13px">of {N:,}</span></div>
-                <div style="margin:6px 0 4px 0">{spark_svg(hh.total_margin.values, CORAL if h.total_margin < 0 else TEAL, w=250, h=52)}</div>
+                <div style="margin:6px 0 4px 0">{spark_svg(hh.total_margin.values, palette[i], w=250, h=52)}</div>
                 <div class="cmp-row"><span>Profit per $1</span><b style="color:{CORAL if h.total_margin < 0 else TEAL}">{100 * h.total_margin:.1f}%</b></div>
                 <div class="cmp-row"><span>Years losing money</span><b>{int(h.loss_streak)}</b></div>
                 <div class="cmp-row"><span>Days of cash</span><b>{show_value("days_cash_on_hand", h.days_cash_on_hand)}</b></div>
