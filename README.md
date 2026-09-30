@@ -98,9 +98,9 @@ care, staffing, size, cash and agency staff costs. Each hospital's top three rea
 
 Five pages, built with Streamlit and Plotly, designed as a product rather than a report:
 
-1. **Overview:** an animated banner, then a **night map** of all 4,460 hospitals as points of light at their real
-   locations (high risk glows coral; click a dot to open the hospital), a sunburst of who is at risk (owner, then
-   rural or urban, then risk level), and a list you can click into. Filter chips (state, hospital type, owner, rural
+1. **Overview:** an animated banner and a three-step "start here" guide for first-time visitors, then a **night map** of all 4,460 hospitals as points of light at their real
+   locations (high risk glows coral; click a dot to open the hospital), a simple chart of which kinds of
+   hospitals are most at risk, and a list you can click into. Filter chips (state, hospital type, owner, rural
    or urban) drive every number and chart.
 2. **Hospital profile:** risk level, rank and percentile, a "comet" of all hospitals by risk score with this one
    called out, then tabs for **why this score** (the exact factors that

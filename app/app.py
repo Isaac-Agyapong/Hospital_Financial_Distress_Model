@@ -295,6 +295,17 @@ div[data-testid="stMetricValue"] {{ font-weight: 800; }}
     background: #FFF7EC; border: 1px solid #F8DDB6; font-size: 14px; color: #5B4A33; line-height: 1.55; }}
 .note .msym {{ color: {AMBER}; font-size: 22px; }}
 .note b {{ color: #3D2F1C; }}
+.start {{ background: #fff; border: 1px solid {LINE}; border-radius: 18px; padding: 14px 18px 14px 18px;
+    box-shadow: 0 6px 18px rgba(22,22,42,.05); animation: rise .6s both; }}
+.start-lab {{ font-size: 12px; font-weight: 800; letter-spacing: .1em; text-transform: uppercase; color: {INDIGO}; margin-bottom: 10px; }}
+.start-row {{ display: grid; grid-template-columns: repeat(3, 1fr); gap: 14px; }}
+.sh {{ display: flex; gap: 10px; align-items: flex-start; }}
+.sh-n {{ flex: none; width: 26px; height: 26px; border-radius: 50%; background: {INDIGO}; color: white; font-weight: 800;
+    font-size: 13px; display: grid; place-items: center; }}
+.sh .msym {{ color: {INDIGO}; font-size: 22px; flex: none; margin-top: 2px; }}
+.sh-t {{ font-size: 14.5px; font-weight: 800; color: {INK}; }}
+.sh-d {{ font-size: 13.5px; color: {INK_2}; line-height: 1.45; }}
+.start-key {{ margin-top: 12px; padding-top: 10px; border-top: 1px dashed {LINE}; font-size: 13.5px; color: {INK_2}; line-height: 2; }}
 .waffles {{ display: flex; justify-content: space-around; gap: 12px; flex-wrap: wrap; padding-top: 6px; }}
 .waffle {{ text-align: center; }}
 .waffle-n {{ font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin-top: 10px; }}
@@ -523,8 +534,8 @@ def hero():
     </div>
     <div class="hero-stats">
       <div class="hs"><b>{N:,}</b><span>hospitals scored</span></div>
-      <div class="hs"><b>{HIT}<small> in 100</small></b><span>high-risk picks proved right in the test</span></div>
-      <div class="hs"><b>+{hm - hr}</b><span>more early warnings than the best simple rule</span></div>
+      <div class="hs"><b>{HIT}<small> in 100</small></b><span>of the hospitals it flagged as high risk really did struggle, when checked against later years</span></div>
+      <div class="hs"><b>+{hm - hr}</b><span>more struggling hospitals spotted early than a simple rule of thumb</span></div>
     </div>
   </div>
 </div>"""
@@ -559,8 +570,24 @@ def night_map(d):
     return fig
 
 
+def start_here():
+    steps = [("map", "Look at the map", "Every dot is a hospital. Red means high risk of losing money two years in a row."),
+             ("touch_app", "Click any hospital", "See its risk, its profit history and the reasons behind its rating."),
+             ("tune", "Try \"what if\"", "In the simulator, change its numbers and watch the risk go up or down.")]
+    cells = "".join(f'<div class="sh"><span class="sh-n">{i + 1}</span><span class="msym">{ic}</span>'
+                    f'<div><div class="sh-t">{t_}</div><div class="sh-d">{d_}</div></div></div>'
+                    for i, (ic, t_, d_) in enumerate(steps))
+    html(f"""<div class="start"><div class="start-lab">New here? Start with these three steps</div>
+        <div class="start-row">{cells}</div>
+        <div class="start-key"><b>Risk levels:</b> {badge("High")} the 10% of hospitals most likely to struggle ·
+        {badge("Elevated")} the next 20% · {badge("Lower")} the other 70%. <b>Profit</b> is the cents a hospital keeps from
+        each $1 it takes in; below zero means it lost money.</div></div>""")
+
+
 def overview():
     hero()
+    st.write("")
+    start_here()
     # clicks remembered from the last run: a dot on the night map opens that hospital, a row in the table too
     ev = st.session_state.get("night")
     pts = (ev or {}).get("selection", {}).get("points", []) if ev else []
@@ -575,9 +602,12 @@ def overview():
         c = st.columns([1.2, 1.3, 1.6, 1.2])
         states = ["All states"] + sorted(SCORES.state_abbrev.unique())
         state = c[0].selectbox("State", states, key="f_state")
-        htype = c[1].pills("Hospital type", ["General", "Critical access"], selection_mode="multi", key="f_type")
-        owner = c[2].pills("Owner", ["Nonprofit", "For-profit", "Government"], selection_mode="multi", key="f_owner")
-        area = c[3].pills("Area", ["Urban", "Rural"], selection_mode="multi", key="f_area")
+        htype = c[1].pills("Hospital type", ["General", "Critical access"], selection_mode="multi", key="f_type",
+                           help="Critical access = small rural hospitals with 25 beds or fewer. General = all other hospitals.")
+        owner = c[2].pills("Owner", ["Nonprofit", "For-profit", "Government"], selection_mode="multi", key="f_owner",
+                           help="Who runs the hospital: a charity (nonprofit), a company (for-profit) or a city, county or state (government).")
+        area = c[3].pills("Area", ["Urban", "Rural"], selection_mode="multi", key="f_area",
+                          help="Urban = in or near a city. Rural = countryside.")
     d = SCORES
     if state != "All states":
         d = d[d.state_abbrev == state]
@@ -596,51 +626,53 @@ def overview():
     c = st.columns(4)
     shares = {L: 100 * lv.get(L, 0) / n for L in LEVELS}
     trend = HIST[HIST.ccn.isin(d.ccn)].groupby("fiscal_year").total_margin.median()
-    kpi(c[0], "n", "Hospitals in view", f"{n:,}", "latest report, mostly 2023", INDIGO_D, "local_hospital",
+    kpi(c[0], "n", "Hospitals shown", f"{n:,}", "from their latest yearly reports", INDIGO_D, "local_hospital",
         mixbar_svg(shares), 0)
     kpi(c[1], "h", "High risk", f"{lv.get('High', 0):,}",
-        f"{TRACK['High']} in 100 like these lost money in the test", CORAL, "warning",
+        f"of those shown. In past years, {TRACK['High']} in 100 like these went on to struggle", CORAL, "warning",
         ring_svg(shares["High"], CORAL, text=f"{shares['High']:.0f}%", track="#FBE3DC"), 1)
     kpi(c[2], "e", "Elevated risk", f"{lv.get('Elevated', 0):,}",
-        f"{TRACK['Elevated']} in 100 in the test", AMBER, "trending_up",
+        f"of those shown. In past years, {TRACK['Elevated']} in 100 like these struggled", AMBER, "trending_up",
         ring_svg(shares["Elevated"], AMBER, text=f"{shares['Elevated']:.0f}%", track="#FBEBD6"), 2)
-    kpi(c[3], "m", "Typical profit margin", f"{100 * d.total_margin.median():.1f}%",
-        f"typical margin, {int(trend.index.min())}-{int(trend.index.max())}", INDIGO, "payments",
+    kpi(c[3], "m", "Typical profit", f"{100 * d.total_margin.median():.1f}¢",
+        f"kept from each $1 of income. Trend since {int(trend.index.min())}", INDIGO, "payments",
         spark_svg(trend.values, INDIGO), 3)
     st.write("")
     with st.container(key="night-card"):
         st.markdown(f'<div class="night-head"><div><div class="night-eyebrow">The night map</div>'
                     f'<div class="night-title">{n:,} hospitals, each a point of light</div></div>'
-                    f'<div class="night-note">Coral = high risk · hover for details · <b>click a dot to open the hospital</b>'
+                    f'<div class="night-note">Red dots = high risk · point at a dot for details · <b>click a dot to open that hospital</b>'
                     f'</div></div>', unsafe_allow_html=True)
         plot(night_map(d), on_select="rerun", selection_mode="points", key="night")
     st.write("")
     left, right = st.columns([1, 1.25])
     with left, card("sun"):
-        section("donut_large", "Who is at risk", "Owner, then rural or urban, then risk level. Click a ring to zoom in.")
-        g = d.groupby(["ownership", "rural_urban", "risk_level"]).size().reset_index(name="n")
-        ids, labels, parents, values, colours = [], [], [], [], []
-        own_col = {"Nonprofit": INDIGO, "For-profit": "#6A62E0", "Government": "#2B2596"}
-        for o, go_ in g.groupby("ownership"):
-            ids.append(o); labels.append(o); parents.append(""); values.append(go_.n.sum()); colours.append(own_col.get(o, INDIGO))
-            for a, ga in go_.groupby("rural_urban"):
-                ids.append(f"{o}/{a}"); labels.append(a); parents.append(o); values.append(ga.n.sum())
-                colours.append(INDIGO_L if a == "Urban" else "#C9C6F4")
-                for _, r in ga.iterrows():
-                    ids.append(f"{o}/{a}/{r.risk_level}"); labels.append(r.risk_level); parents.append(f"{o}/{a}")
-                    values.append(r.n); colours.append(LEVEL_COLOUR[r.risk_level])
-        fig = go.Figure(go.Sunburst(ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
-                                    marker=dict(colors=colours, line=dict(color="white", width=1.5)),
-                                    insidetextorientation="radial", textfont=dict(size=13),
-                                    hovertemplate="<b>%{label}</b><br>%{value:,} hospitals<br>%{percentParent:.0%} of "
-                                                  "%{parent}<extra></extra>"))
-        fig = styled(fig, 420)
-        fig.update_layout(uniformtext=dict(minsize=12, mode="hide"))
+        section("groups", "Which kinds of hospitals are most at risk",
+                "Share of each group rated high risk. The dashed line is the average for all hospitals shown.")
+        groups = [("For-profit", d.ownership == "For-profit"), ("Nonprofit", d.ownership == "Nonprofit"),
+                  ("Government", d.ownership == "Government"), ("City (urban)", d.rural_urban == "Urban"),
+                  ("Countryside (rural)", d.rural_urban == "Rural"), ("General hospitals", d.type_short == "General"),
+                  ("Small rural hospitals", d.type_short == "Critical access")]
+        g = pd.DataFrame([(name, int(m.sum()), 100 * (d[m].risk_level == "High").mean()) for name, m in groups if m.sum() >= 10],
+                         columns=["group", "n", "share"]).sort_values("share")
+        avg = 100 * (d.risk_level == "High").mean()
+        fig = go.Figure(go.Bar(
+            x=g.share, y=g.group, orientation="h",
+            marker=dict(color=[CORAL if v > avg else INDIGO_L for v in g.share], cornerradius=7),
+            text=[f"<b>{v:.0f}%</b>  of {n:,}" for v, n in zip(g.share, g.n)], textposition="outside",
+            textfont=dict(size=12.5), hovertemplate="%{y}: %{x:.0f}% at high risk<extra></extra>"))
+        fig.add_vline(x=avg, line_dash="dash", line_color=INK_3, line_width=1.5,
+                      annotation_text=f"average {avg:.0f}%", annotation_position="top",
+                      annotation_font=dict(size=11.5, color=INK_2))
+        fig.update_xaxes(visible=False, range=[0, max(g.share.max() * 1.45, 5)])
+        fig.update_yaxes(tickfont=dict(size=13))
+        fig = styled(fig, 400)
+        fig.update_layout(bargap=0.35, margin=dict(l=8, r=8, t=30, b=8))
         plot(fig)
     with right, card("list"):
         top = st.columns([1.7, 1.6])
         with top[0]:
-            section("format_list_numbered", "Highest-risk hospitals", "Select a row to open its profile", CORAL)
+            section("format_list_numbered", "Hospitals most at risk", "Tick a row to open that hospital's page", CORAL)
         lvl = top[1].segmented_control("Show", LEVELS, default="High", key="f_level", label_visibility="collapsed")
         t = d[d.risk_level == lvl] if lvl else d
         table = t.assign(margin=100 * t.total_margin)[["label", "percentile", "margin", "loss_streak"]].head(300)
@@ -649,10 +681,10 @@ def overview():
             selection_mode="single-row", key="table",
             column_config={
                 "label": st.column_config.TextColumn("Hospital", width=250),
-                "percentile": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.0f",
+                "percentile": st.column_config.ProgressColumn("Risk rating", min_value=0, max_value=100, format="%.0f",
                                                               width=100),
-                "margin": st.column_config.NumberColumn("Margin", format="%.1f%%", width=72),
-                "loss_streak": st.column_config.NumberColumn("Loss years", width=76)})
+                "margin": st.column_config.NumberColumn("Profit", format="%.1f%%", width=72),
+                "loss_streak": st.column_config.NumberColumn("Years losing", width=90)})
         rows = ev.selection.rows if ev is not None else []
         if rows:
             open_profile(table.iloc[rows[0]].label)
@@ -678,14 +710,14 @@ def swarm(h):
                     marker=dict(size=34, color=LEVEL_COLOUR[h.risk_level], opacity=0.2))
     fig.add_scatter(x=[hx], y=[0], mode="markers", showlegend=False, hoverinfo="skip",
                     marker=dict(size=15, color=LEVEL_COLOUR[h.risk_level], line=dict(color="white", width=3)))
-    fig.add_annotation(x=hx, y=0, ax=0, ay=-78, text=f"<b>{h['name'][:44]}</b><br>score {hx:.0f} · #{int(h.risk_rank):,}",
+    fig.add_annotation(x=hx, y=0, ax=0, ay=-78, text=f"<b>{h['name'][:44]}</b><br>#{int(h.risk_rank):,} of {N:,} most at risk",
                        showarrow=True, arrowhead=0, arrowwidth=1.5, arrowcolor=INK, bgcolor="white",
                        bordercolor=LINE, borderpad=6, font=dict(size=12, color=INK, family="Plus Jakarta Sans"))
     for xv, lab in [(100 * Q70, "elevated"), (100 * Q90, "high")]:
         fig.add_vline(x=xv, line_color=INK_3, line_dash="dot", line_width=1)
         fig.add_annotation(x=xv, y=-2.9, text=f"{lab} risk from here", showarrow=False, xanchor="left",
                            font=dict(size=11, color=INK_3))
-    fig.update_xaxes(range=[-1, 101], title="model risk score (0-100)", showgrid=False, zeroline=False)
+    fig.update_xaxes(range=[-1, 101], title="<b>safest</b>  ←  risk  →  <b>most at risk</b>", showgrid=False, zeroline=False, showticklabels=False)
     fig.update_yaxes(visible=False, range=[-3.1, 3.4])
     fig.update_layout(legend=dict(orientation="h", y=1.1, x=0))
     return styled(fig, 340, legend=True)
@@ -704,7 +736,7 @@ def profile():
         <span class="gchip"><span class="msym">location_on</span>{h.city}, {h.state_abbrev}</span>
         <span class="gchip"><span class="msym">apartment</span>{h.ownership}</span>
         <span class="gchip"><span class="msym">{"park" if h.rural_urban == "Rural" else "location_city"}</span>{h.rural_urban}</span>{beds}</div>
-        <div class="phead-r">{ring_svg(h.percentile, lc, size=124, stroke=11, text=f"{h.percentile:.0f}", sub="risk percentile",
+        <div class="phead-r">{ring_svg(h.percentile, lc, size=124, stroke=11, text=f"{h.percentile:.0f}", sub="risk rating",
                                       track="rgba(255,255,255,.12)", text_colour="white")}
         <div>{badge(h.risk_level)}<div class="phead-rank">#{int(h.risk_rank):,} <span>of {N:,}</span></div>
         <div class="phead-note">riskier than {h.percentile:.0f}% of US hospitals</div></div></div></div>""")
@@ -712,29 +744,29 @@ def profile():
     c = st.columns(4)
     hh = HIST[HIST.ccn == h.ccn].sort_values("fiscal_year")
     mcol = CORAL if h.total_margin < 0 else TEAL
-    kpi(c[0], "pm", "Profit margin", f"{100 * h.total_margin:.1f}%",
-        f"US typical {100 * SCORES.total_margin.median():.1f}% · trend since {int(hh.fiscal_year.min())}", mcol, "payments",
+    kpi(c[0], "pm", "Profit (or loss)", f"{100 * h.total_margin:.1f}%",
+        f"per $1 of income (typical: {100 * SCORES.total_margin.median():.1f}%)", mcol, "payments",
         spark_svg(hh.total_margin.values, mcol), 0)
     kpi(c[1], "ls", "Years in a row losing money", f"{int(h.loss_streak)}",
         "made money in its latest year" if h.loss_streak == 0 else f"losing money up to {int(h.fiscal_year)}",
         CORAL if h.loss_streak >= 2 else INDIGO, "event_repeat", streak_svg(h.ccn), 1)
-    kpi(c[2], "pc", "Profit on patient care", show_value("operating_margin", h.operating_margin),
-        "before gifts and investments", CORAL if (h.operating_margin or 0) < 0 else TEAL, "stethoscope",
+    kpi(c[2], "pc", "Profit from treating patients", show_value("operating_margin", h.operating_margin),
+        "not counting donations", CORAL if (h.operating_margin or 0) < 0 else TEAL, "stethoscope",
         bullet_svg(h.operating_margin, SCORES.operating_margin.median(), CORAL if (h.operating_margin or 0) < 0 else TEAL), 2)
-    kpi(c[3], "tr", "Track record of this level", f"{TRACK[h.risk_level]} in 100",
-        f"{h.risk_level.lower()}-risk hospitals that then lost money two years (test)", lc, "fact_check",
+    kpi(c[3], "tr", "How often this goes badly", f"{TRACK[h.risk_level]} in 100",
+        f"{h.risk_level}-risk hospitals then lost money 2 years running", lc, "fact_check",
         ring_svg(TRACK[h.risk_level], lc, text=f"{TRACK[h.risk_level]}", track=LEVEL_BG[h.risk_level]), 3)
     st.write("")
     with card("swarm"):
         section("scatter_plot", "Where it sits among all US hospitals",
-                f"Each dot is one of {N:,} hospitals, placed by its risk score. Most are low risk; a long tail runs toward trouble.")
+                f"Each dot is one US hospital, from safest (left) to most at risk (right). Most are safe; a thin tail runs toward trouble.")
         plot(swarm(h))
     st.write("")
     tabs = st.tabs([":material/insights: Why this score", ":material/bar_chart: Profit history",
                     ":material/groups: Compared with peers"])
     with tabs[0], card("why"):
         section("psychology", "What moved this hospital's score",
-                "Each bar is one factor: right = pushes the risk up, left = pulls it down. Exact contributions from the model.",
+                "Each bar is one thing the model looked at. Bars to the right make things look worse; bars to the left make them look better.",
                 CORAL)
         top = contrib.reindex(contrib.abs().sort_values(ascending=False).index).head(8)[::-1]
         ylab = []
@@ -744,7 +776,8 @@ def profile():
             who = "that year" if f in ("us_median_margin", "state_median_margin", "state_share_losing") else "this hospital"
             if who == "that year":
                 extra = ""
-            ylab.append(f"<b>{META['labels'][f].capitalize()}</b><br><span style='color:{INK_3}'>{who} "
+            name = META['labels'][f].replace('profit margin', 'profit').replace('profit on patient care', 'profit from treating patients')
+            ylab.append(f"<b>{name.capitalize()}</b><br><span style='color:{INK_3}'>{who} "
                         f"{show_value(f, row[f])}{extra}</span>")
         lim = max(abs(top.values).max() * 1.25, 0.1)
         fig = go.Figure(go.Bar(
@@ -765,7 +798,7 @@ def profile():
         fig.update_layout(bargap=0.32, margin=dict(l=8, r=8, t=34, b=8))
         plot(fig)
     with tabs[1], card("hist"):
-        section("bar_chart", "Profit margin by year", "Share of each dollar of income kept as profit. Coral = a loss.")
+        section("bar_chart", "Profit or loss, year by year", "Cents kept from each $1 of income. Red bars = years it lost money.")
         fig = go.Figure(go.Bar(x=hh.fiscal_year, y=100 * hh.total_margin,
                                marker=dict(color=[CORAL if v < 0 else INDIGO for v in hh.total_margin], cornerradius=6),
                                text=[f"{100 * v:.1f}%" for v in hh.total_margin], textposition="outside",
@@ -781,7 +814,7 @@ def profile():
         ps = 100 * (peers.risk_level == "High").mean()
         kpi(pc[0], "pp1", "Peers in the state", f"{len(peers):,}", f"{h.hospital_type.lower()} hospitals",
             INDIGO, "groups", mixbar_svg({L: 100 * (peers.risk_level == L).mean() for L in LEVELS}), 0)
-        kpi(pc[1], "pp2", "Their typical profit margin", f"{100 * peers.total_margin.median():.1f}%",
+        kpi(pc[1], "pp2", "Their typical profit", f"{100 * peers.total_margin.median():.1f}%",
             f"this hospital {100 * h.total_margin:.1f}%", INDIGO, "payments",
             bullet_svg(h.total_margin, peers.total_margin.median(), mcol), 1)
         kpi(pc[2], "pp3", "Peers at high risk", f"{ps:.0f}%", "of the same type in the state", CORAL, "warning",
@@ -792,7 +825,7 @@ def profile():
 SCENARIOS = {
     "Break even this year": lambda r: {"total_margin": max(r["total_margin"], 0.0),
                                        "operating_margin": max(r["operating_margin"] or 0, 0.0)},
-    "Cut agency staff in half": lambda r: {"contract_labor_pct": (r["contract_labor_pct"] or 0) / 2},
+    "Halve temporary agency staff": lambda r: {"contract_labor_pct": (r["contract_labor_pct"] or 0) / 2},
     "Add 30 days of cash": lambda r: {"days_cash_on_hand": max(r["days_cash_on_hand"] or 0, 0) + 30},
     "Lose 5 more cents per dollar": lambda r: {"total_margin": r["total_margin"] - 0.05,
                                                "operating_margin": (r["operating_margin"] or 0) - 0.05},
@@ -837,10 +870,10 @@ def simulator():
                 st.session_state[key + k] = v
             st.rerun()
         section("tune", "Or adjust the numbers")
-        m = st.slider("Profit margin this year", -40.0, 40.0, step=0.5, key=key + "m", format="%.1f%%")
-        om = st.slider("Profit on patient care", -60.0, 40.0, step=0.5, key=key + "o", format="%.1f%%")
+        m = st.slider("Profit this year (cents per $1)", -40.0, 40.0, step=0.5, key=key + "m", format="%.1f%%")
+        om = st.slider("Profit from treating patients", -60.0, 40.0, step=0.5, key=key + "o", format="%.1f%%")
         cash = st.slider("Days of cash in the bank", 0.0, 365.0, step=1.0, key=key + "c", format="%.0f days")
-        agency = st.slider("Agency staff, share of salaries", 0.0, 40.0, step=0.5, key=key + "a", format="%.1f%%")
+        agency = st.slider("Temporary agency staff, as % of pay", 0.0, 40.0, step=0.5, key=key + "a", format="%.1f%%")
     row = dict(base, total_margin=m / 100, operating_margin=om / 100, days_cash_on_hand=cash,
                contract_labor_pct=agency / 100, loss=int(m < 0))
     if m >= 0:
@@ -853,13 +886,13 @@ def simulator():
     pb, pa = percentile_of(before), percentile_of(after)
     lb, la = level_of(before), level_of(after)
     with right, st.container(key="dark-outcome"):
-        section("speed", "Outlook", "Grey marker = as reported")
+        section("speed", "Result", "The white line shows where it is today")
         c = st.columns(2)
         c[0].markdown(f'<div class="muted">As reported</div>{badge(lb)}', unsafe_allow_html=True)
         c[1].markdown(f'<div class="muted">With your changes</div>{badge(la)}', unsafe_allow_html=True)
         fig = go.Figure(go.Indicator(
             mode="gauge+number", value=pa, number=dict(valueformat=".0f", font=dict(size=50, color="white")),
-            title=dict(text="risk percentile (100 = highest)", font=dict(size=12.5, color="#BEBBF0")),
+            title=dict(text="risk rating (100 = most at risk)", font=dict(size=12.5, color="#BEBBF0")),
             gauge=dict(axis=dict(range=[0, 100], tickvals=[0, 70, 90, 100], tickfont=dict(size=11, color="#BEBBF0"),
                                  tickcolor="#5C58B0"),
                        bar=dict(color=LEVEL_COLOUR[la], thickness=0.3), bgcolor="rgba(255,255,255,.04)",
@@ -874,7 +907,7 @@ def simulator():
         arrow = "no change" if abs(moved) < 0.5 else (f"▲ {moved:.0f} points riskier" if moved > 0 else f"▼ {-moved:.0f} points safer")
         colour = "#E9E8FF" if abs(moved) < 0.5 else (CORAL if moved > 0 else "#4FD1C0")
         html(f"""<div style="text-align:center;font-size:20px;font-weight:800;color:{colour}">{arrow}</div>
-            <div class="sub" style="text-align:center;margin-top:4px">In the test, <b>{TRACK[la]} in 100</b> hospitals at the
+            <div class="sub" style="text-align:center;margin-top:4px">In past years, <b>{TRACK[la]} in 100</b> hospitals at the
             <b>{la.lower()}</b> level lost money in both of the next two years.</div><div style="height:6px"></div>""")
     st.write("")
     with card("impact"):
@@ -943,18 +976,18 @@ def compare():
                 <div style="display:flex;justify-content:space-between;gap:10px;align-items:flex-start">
                 <div><div class="cmp-name"><span style="color:{palette[i]}">●</span> {h["name"]}</div>
                 <div class="muted" style="margin:2px 0 8px 0">{h.city}, {h.state_abbrev} · {h.ownership}</div>{badge(h.risk_level)}</div>
-                {ring_svg(h.percentile, lc, size=78, stroke=8, text=f"{h.percentile:.0f}", sub="percentile",
+                {ring_svg(h.percentile, lc, size=78, stroke=8, text=f"{h.percentile:.0f}", sub="risk rating",
                           track=LEVEL_BG[h.risk_level])}</div>
                 <div style="font-size:26px;font-weight:800;color:{INK};margin:10px 0 2px 0">#{int(h.risk_rank):,}
                 <span class="muted" style="font-size:13px">of {N:,}</span></div>
                 <div style="margin:6px 0 4px 0">{spark_svg(hh.total_margin.values, CORAL if h.total_margin < 0 else TEAL, w=250, h=52)}</div>
-                <div class="cmp-row"><span>Profit margin</span><b style="color:{CORAL if h.total_margin < 0 else TEAL}">{100 * h.total_margin:.1f}%</b></div>
+                <div class="cmp-row"><span>Profit per $1</span><b style="color:{CORAL if h.total_margin < 0 else TEAL}">{100 * h.total_margin:.1f}%</b></div>
                 <div class="cmp-row"><span>Years losing money</span><b>{int(h.loss_streak)}</b></div>
                 <div class="cmp-row"><span>Days of cash</span><b>{show_value("days_cash_on_hand", h.days_cash_on_hand)}</b></div>
-                <div class="cmp-row"><span>Biggest factor</span><b>{str(h.reason_1)}</b></div></div>""")
+                <div class="cmp-row"><span>Biggest factor</span><b>{str(h.reason_1).replace('profit margin', 'profit')}</b></div></div>""")
     st.write("")
     with card("cmp_hist"):
-        section("show_chart", "Profit margin over time", "Below the line = losing money")
+        section("show_chart", "Profit or loss over time", "Below the line = losing money")
         fig = go.Figure()
         lows = []
         for i, (_, h) in enumerate(d.iterrows()):
@@ -988,14 +1021,14 @@ def performance():
             f'<rect x="54" y="{58 - 50 * hr / hm:.0f}" width="30" height="{50 * hr / hm:.0f}" rx="7" fill="#F29B38" '
             f'style="animation:pop .5s .15s both"/></svg>')
     c = st.columns(4)
-    kpi(c[0], "p1", "High-risk picks that were right", f"{HIT} in 100", "2021 reports, outcome 2022-2023", INDIGO,
+    kpi(c[0], "p1", "Right when it said 'high risk'", f"{HIT} in 100", "2021 reports, outcome 2022-2023", INDIGO,
         "target", ring_svg(HIT, INDIGO, text=f"{HIT}", track=INDIGO_XL), 0)
     kpi(c[1], "p2", "Best rule of thumb", f"{rule} in 100", "already lost money 2 years running", "#E58A1F",
         "rule", ring_svg(rule, "#F29B38", text=f"{rule}", track="#FDEBD5"), 1)
-    kpi(c[2], "p3", "Early warnings caught", f"+{hm - hr}", f"{hm} vs {hr} among hospitals still making money", TEAL,
+    kpi(c[2], "p3", "Early warnings caught", f"+{hm - hr}", f"{hm} vs {hr} caught while still making money", TEAL,
         "notifications_active", bars, 2)
-    kpi(c[3], "p4", "Ranking accuracy", f"{auc:.2f}", f"ROC-AUC · best rule {auc_rule:.2f} · 0.5 = a coin flip", INDIGO_D,
-        "leaderboard", ring_svg(100 * (auc - 0.5) / 0.5, INDIGO_D, text=f"{auc:.2f}", track=INDIGO_XL), 3)
+    kpi(c[3], "p4", "Tells struggling from safe", f"{round(100 * auc)} in 100", f"picks the struggler from a pair (coin flip: 50)", INDIGO_D,
+        "leaderboard", ring_svg(100 * auc, INDIGO_D, text=f"{round(100 * auc)}", track=INDIGO_XL), 3)
     st.write("")
     left, right = st.columns([1.2, 1])
     with left, card("perf_years"):
@@ -1020,7 +1053,7 @@ def performance():
         plot(styled(fig, 400, legend=True))
     with right, card("perf_levels"):
         section("grid_view", "Out of every 100 hospitals in each group",
-                "how many lost money in both of the next two years (2021 test)", CORAL)
+                "how many lost money in both of the next two years, checked on 2021 reports", CORAL)
         cells = "".join(
             f'<div class="waffle">{waffle_svg(TRACK[L], LEVEL_COLOUR[L], cell=9, gap=3)}'
             f'<div class="waffle-n" style="color:{LEVEL_COLOUR[L]}">{TRACK[L]} in 100</div>'
