@@ -1,0 +1,132 @@
+{
+  "target": "lost money in both of the next two years",
+  "top_share": 0.1,
+  "params": {
+    "max_depth": 3,
+    "min_child_weight": 30,
+    "learning_rate": 0.03,
+    "n_estimators": 1000
+  },
+  "features": [
+    "total_margin",
+    "operating_margin",
+    "margin_last_year",
+    "margin_two_years_ago",
+    "margin_change",
+    "operating_margin_last_year",
+    "loss",
+    "loss_streak",
+    "other_income_share",
+    "other_income_share_last_year",
+    "beds",
+    "log_revenue",
+    "revenue_growth",
+    "discharge_growth",
+    "occupancy_rate",
+    "current_ratio",
+    "debt_ratio",
+    "days_cash_on_hand",
+    "days_cash_change",
+    "current_ratio_change",
+    "salary_share_of_costs",
+    "staff_per_bed",
+    "cost_per_discharge",
+    "cost_growth",
+    "charge_to_cost",
+    "contract_labor_pct",
+    "medicaid_day_share",
+    "medicare_day_share",
+    "uncompensated_care_pct",
+    "medicaid_expanded_now",
+    "state_median_margin",
+    "state_share_losing",
+    "us_median_margin",
+    "hospital_type",
+    "ownership",
+    "rural_urban",
+    "medicaid_status"
+  ],
+  "labelled_rows": 46946,
+  "hospitals_scored": 4460,
+  "scored_year_counts": {
+    "2022": 130,
+    "2023": 4330
+  },
+  "test_2021": {
+    "XGBoost": {
+      "n": 4219,
+      "base_rate": 0.2406,
+      "roc_auc": 0.8192,
+      "pr_auc": 0.5987,
+      "flagged": 422,
+      "hits": 298,
+      "precision_top": 0.7062,
+      "recall_top": 0.2936
+    },
+    "Logistic regression": {
+      "n": 4219,
+      "base_rate": 0.2406,
+      "roc_auc": 0.8074,
+      "pr_auc": 0.5668,
+      "flagged": 422,
+      "hits": 271,
+      "precision_top": 0.6422,
+      "recall_top": 0.267
+    },
+    "Rule: lost money 2+ years in a row": {
+      "n": 4219,
+      "base_rate": 0.2406,
+      "roc_auc": 0.7686,
+      "pr_auc": 0.5415,
+      "flagged": 422,
+      "hits": 290,
+      "precision_top": 0.6872,
+      "recall_top": 0.2857
+    },
+    "Rule: lowest profit margin first": {
+      "n": 4219,
+      "base_rate": 0.2406,
+      "roc_auc": 0.7607,
+      "pr_auc": 0.4924,
+      "flagged": 422,
+      "hits": 243,
+      "precision_top": 0.5758,
+      "recall_top": 0.2394
+    }
+  },
+  "early_warning_2021": {
+    "XGBoost": {
+      "n": 3184,
+      "base_rate": 0.157,
+      "roc_auc": 0.7895,
+      "pr_auc": 0.381,
+      "flagged": 318,
+      "hits": 147,
+      "precision_top": 0.4623,
+      "recall_top": 0.294
+    },
+    "Logistic regression": {
+      "n": 3184,
+      "base_rate": 0.157,
+      "roc_auc": 0.7758,
+      "pr_auc": 0.3743,
+      "flagged": 318,
+      "hits": 141,
+      "precision_top": 0.4434,
+      "recall_top": 0.282
+    },
+    "Rule: lowest profit margin first": {
+      "n": 3184,
+      "base_rate": 0.157,
+      "roc_auc": 0.6935,
+      "pr_auc": 0.2886,
+      "flagged": 318,
+      "hits": 118,
+      "precision_top": 0.3711,
+      "recall_top": 0.236
+    }
+  },
+  "brier_2021": 0.1433,
+  "high_risk_cutoff": 0.5871,
+  "high_risk_hospitals": 446
+}

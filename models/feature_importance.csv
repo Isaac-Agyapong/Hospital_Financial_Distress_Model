@@ -1,0 +1,38 @@
+feature,importance,label
+total_margin,0.67729396,profit margin this year
+operating_margin,0.35221404,profit on patient care
+margin_last_year,0.314096,profit margin last year
+margin_two_years_ago,0.27227604,profit margin two years ago
+operating_margin_last_year,0.14131543,profit on patient care last year
+staff_per_bed,0.12478103,staff per bed
+salary_share_of_costs,0.11514312,staff pay as a share of costs
+log_revenue,0.098402254,size (revenue)
+us_median_margin,0.09579315,national typical margin
+days_cash_on_hand,0.094986126,days of cash in the bank
+contract_labor_pct,0.087964416,spending on agency staff
+cost_per_discharge,0.068793766,cost per patient stay
+hospital_type,0.06754322,hospital type
+loss,0.06594079,lost money this year
+beds,0.06355828,number of beds
+days_cash_change,0.06178929,change in cash in the bank
+current_ratio_change,0.056111194,change in ability to pay short-term bills
+discharge_growth,0.049852483,change in patients treated
+debt_ratio,0.049285177,debt compared with assets
+charge_to_cost,0.04715548,list prices compared with costs
+margin_change,0.041046083,change in profit margin from last year
+loss_streak,0.039863307,years in a row losing money
+medicaid_expanded_now,0.039608315,state has expanded Medicaid
+other_income_share,0.039258383,"income from investments, gifts and grants"
+medicare_day_share,0.038393266,share of Medicare patients
+current_ratio,0.03812345,short-term bills it can cover
+other_income_share_last_year,0.037708316,"income from investments, gifts and grants last year"
+medicaid_day_share,0.034713354,share of Medicaid patients
+occupancy_rate,0.02712448,share of beds filled
+state_share_losing,0.025133528,share of hospitals losing money in its state
+state_median_margin,0.023015385,typical margin in its state
+medicaid_status,0.021746337,state Medicaid expansion
+uncompensated_care_pct,0.01954325,unpaid care
+cost_growth,0.019164087,growth in cost per stay
+revenue_growth,0.009656325,revenue growth
+rural_urban,0.0094518745,rural or urban
+ownership,0.007697232,owner
