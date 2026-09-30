@@ -860,8 +860,8 @@ def simulator():
             <b>{la.lower()}</b> level lost money in both of the next two years.</div><div style="height:6px"></div>""")
     st.write("")
     with card("impact"):
-        section("bolt", "What each scenario would do on its own",
-                "Starting from the reported numbers. Grey dot = today, coloured dot = after the change.", AMBER)
+        section("bolt", "What each change would do on its own",
+                "Starting from this hospital's reported numbers, best change first.", AMBER)
         rows = []
         for name, fn in SCENARIOS.items():
             r = dict(base, **fn(base))
@@ -870,28 +870,36 @@ def simulator():
                 r["loss_streak"] = 0
             if pd.notna(base["margin_last_year"]):
                 r["margin_change"] = r["total_margin"] - base["margin_last_year"]
-            rows.append((name, percentile_of(predict(r))))
+            rows.append((name, predict(r)))
         rows.sort(key=lambda x: x[1])
-        fig = go.Figure()
-        for x0, x1, L in [(0, 70, "Lower"), (70, 90, "Elevated"), (90, 100, "High")]:
-            fig.add_vrect(x0=x0, x1=x1, fillcolor=LEVEL_COLOUR[L], opacity=0.07, line_width=0, layer="below")
-            fig.add_annotation(x=(x0 + x1) / 2, y=1.08, yref="paper", text=f"<b>{L.upper()}</b>", showarrow=False,
-                               font=dict(size=10.5, color=LEVEL_COLOUR[L]))
-        for name, p in rows:
-            col = LEVEL_COLOUR[level_of(SCORES.risk.quantile(p / 100))] if p > 0 else TEAL
-            fig.add_scatter(x=[pb, p], y=[name, name], mode="lines", line=dict(color=col, width=5), opacity=0.55,
-                            showlegend=False, hoverinfo="skip")
-            fig.add_scatter(x=[pb], y=[name], mode="markers", marker=dict(size=13, color="#B9B7CC"), showlegend=False,
-                            hovertemplate=f"today: {pb:.0f}<extra></extra>")
-            fig.add_scatter(x=[p], y=[name], mode="markers+text", text=[f"  {p:.0f}"], textposition="middle right",
-                            textfont=dict(size=12.5, color=col), showlegend=False,
-                            marker=dict(size=17, color=col, line=dict(color="white", width=2.5)),
-                            hovertemplate=f"{name}: {p:.0f}<extra></extra>")
-        fig.update_xaxes(range=[0, 104], title="risk percentile", gridcolor=LINE, zeroline=False)
-        fig.update_yaxes(tickfont=dict(size=13))
-        fig = styled(fig, 320)
-        fig.update_layout(margin=dict(l=8, r=8, t=34, b=8))
-        plot(fig)
+        cols = st.columns(len(rows))
+        for i, (col, (name, risk)) in enumerate(zip(cols, rows)):
+            d = percentile_of(risk) - pb
+            lvl = level_of(risk)
+            if d <= -10:
+                verdict, icon, colour = "Lowers the risk a lot", "trending_down", TEAL
+            elif d <= -2:
+                verdict, icon, colour = "Lowers the risk a little", "south_east", TEAL
+            elif d < 2:
+                verdict, icon, colour = "Makes almost no difference", "trending_flat", INK_3
+            elif d < 10:
+                verdict, icon, colour = "Raises the risk a little", "north_east", CORAL
+            else:
+                verdict, icon, colour = "Raises the risk a lot", "trending_up", CORAL
+            if lvl != lb:
+                note = f"Moves it from <b>{lb.lower()}</b> to <b>{lvl.lower()}</b> risk."
+            else:
+                note = f"It stays at <b>{lb.lower()}</b> risk."
+            safer = 100 - percentile_of(risk)
+            with col:
+                html(f"""<div class="kpi2" style="--c:{colour};height:auto;min-height:200px;animation-delay:{0.07 * i:.2f}s">
+                    <div class="kpi2-top"><span class="kpi2-icon"><span class="msym">{icon}</span></span>
+                    <span class="kpi2-lab" style="color:{INK}">{name}</span></div>
+                    <div style="font-size:19px;font-weight:800;color:{colour};margin:12px 0 10px 0;line-height:1.2">{verdict}</div>
+                    <div style="display:flex;align-items:center;gap:6px;flex-wrap:wrap">{badge(lb, lb)}
+                    <span class="msym" style="color:{INK_3}">arrow_forward</span>{badge(lvl, lvl)}</div>
+                    <div class="kpi2-ctx" style="margin-top:10px">{note} Safer than {safer:.0f}% of US hospitals
+                    afterwards.</div></div>""")
     footer()
 
 
