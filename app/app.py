@@ -838,10 +838,13 @@ def simulator():
     h = hospital_search("search_sim")
     base = h.to_dict()
     key = f"sim_{h.ccn}"
-    defaults = {"m": round(100 * base["total_margin"], 1),
-                "o": round(100 * (base["operating_margin"] if pd.notna(base["operating_margin"]) else 0), 1),
+    # slider ranges wide enough for real extremes; every default is clipped into its range
+    M_RANGE, O_RANGE, A_RANGE = (-100.0, 50.0), (-150.0, 50.0), (0.0, 100.0)
+    fit = lambda v, r: float(np.clip(round(v, 1), *r))   # noqa: E731
+    defaults = {"m": fit(100 * base["total_margin"], M_RANGE),
+                "o": fit(100 * (base["operating_margin"] if pd.notna(base["operating_margin"]) else 0), O_RANGE),
                 "c": float(round(min(max(base["days_cash_on_hand"] if pd.notna(base["days_cash_on_hand"]) else 0, 0), 365))),
-                "a": round(100 * (base["contract_labor_pct"] if pd.notna(base["contract_labor_pct"]) else 0), 1)}
+                "a": fit(100 * (base["contract_labor_pct"] if pd.notna(base["contract_labor_pct"]) else 0), A_RANGE)}
     for k, v in defaults.items():
         st.session_state.setdefault(key + k, v)
     st.write("")
@@ -857,23 +860,23 @@ def simulator():
                            contract_labor_pct=st.session_state[key + "a"] / 100)
                 ch = fn(cur)
                 if "total_margin" in ch:
-                    st.session_state[key + "m"] = float(np.clip(round(100 * ch["total_margin"], 1), -40, 40))
+                    st.session_state[key + "m"] = float(np.clip(round(100 * ch["total_margin"], 1), *M_RANGE))
                 if "operating_margin" in ch:
-                    st.session_state[key + "o"] = float(np.clip(round(100 * ch["operating_margin"], 1), -60, 40))
+                    st.session_state[key + "o"] = float(np.clip(round(100 * ch["operating_margin"], 1), *O_RANGE))
                 if "days_cash_on_hand" in ch:
                     st.session_state[key + "c"] = float(min(ch["days_cash_on_hand"], 365))
                 if "contract_labor_pct" in ch:
-                    st.session_state[key + "a"] = float(round(100 * ch["contract_labor_pct"], 1))
+                    st.session_state[key + "a"] = fit(100 * ch["contract_labor_pct"], A_RANGE)
                 st.rerun()
         if st.button("Reset to reported numbers", key=f"{key}_reset", type="tertiary", icon=":material/restart_alt:"):
             for k, v in defaults.items():
                 st.session_state[key + k] = v
             st.rerun()
         section("tune", "Or adjust the numbers")
-        m = st.slider("Profit this year (cents per $1)", -40.0, 40.0, step=0.5, key=key + "m", format="%.1f%%")
-        om = st.slider("Profit from treating patients", -60.0, 40.0, step=0.5, key=key + "o", format="%.1f%%")
+        m = st.slider("Profit this year (cents per $1)", *M_RANGE, step=0.5, key=key + "m", format="%.1f%%")
+        om = st.slider("Profit from treating patients", *O_RANGE, step=0.5, key=key + "o", format="%.1f%%")
         cash = st.slider("Days of cash in the bank", 0.0, 365.0, step=1.0, key=key + "c", format="%.0f days")
-        agency = st.slider("Temporary agency staff, as % of pay", 0.0, 40.0, step=0.5, key=key + "a", format="%.1f%%")
+        agency = st.slider("Temporary agency staff, as % of pay", *A_RANGE, step=0.5, key=key + "a", format="%.1f%%")
     row = dict(base, total_margin=m / 100, operating_margin=om / 100, days_cash_on_hand=cash,
                contract_labor_pct=agency / 100, loss=int(m < 0))
     if m >= 0:
