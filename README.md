@@ -4,7 +4,7 @@
 hospital financial reports to give every hospital an early-warning risk score, and built an app where anyone can look
 a hospital up and see why it scored the way it did.
 
-**[▶ Open the live app](#live-app)** · Companion analytics project:
+**[▶ Open the live app](https://hospital-risk-forecast.streamlit.app/)** · Companion analytics project:
 [US Hospital Financial Performance Analysis](https://github.com/Isaac-Agyapong/US_Hospital_Financial_Performance_Analysis)
 
 ![App overview](Image/app_overview.png)
@@ -115,7 +115,7 @@ Five pages, built with Streamlit and Plotly, designed as a product rather than a
 | ![Hospital profile](Image/app_profile.png) | ![Scenario simulator](Image/app_simulator.png) |
 | ![Compare](Image/app_compare.png) | ![Performance](Image/app_performance.png) |
 
-Run it locally: `pip install -r app/requirements.txt`, then `streamlit run app/app.py`.
+Live: **https://hospital-risk-forecast.streamlit.app/** · Run it locally: `pip install -r app/requirements.txt`, then `streamlit run app/app.py`.
 
 ## Skills shown
 
