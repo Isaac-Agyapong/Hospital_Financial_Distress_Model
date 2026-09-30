@@ -98,9 +98,12 @@ care, staffing, size, cash and agency staff costs. Each hospital's top three rea
 
 Five pages, built with Streamlit and Plotly, designed as a product rather than a report:
 
-1. **Overview:** filter chips (state, hospital type, owner, rural or urban) drive every number and chart. Click a state
-   on the map to focus on it; click a hospital in the list to open its profile.
-2. **Hospital profile:** risk level, rank and percentile, then tabs for **why this score** (the exact factors that
+1. **Overview:** an animated banner, then a **night map** of all 4,460 hospitals as points of light at their real
+   locations (high risk glows coral; click a dot to open the hospital), a sunburst of who is at risk (owner, then
+   rural or urban, then risk level), and a list you can click into. Filter chips (state, hospital type, owner, rural
+   or urban) drive every number and chart.
+2. **Hospital profile:** risk level, rank and percentile, a "comet" of all hospitals by risk score with this one
+   called out, then tabs for **why this score** (the exact factors that
    pushed this hospital's risk up or down, with its real values), **profit history** and **comparison with peers**.
 3. **Scenario simulator:** one-click scenarios ("Break even this year", "Cut agency staff in half", "Add 30 days of
    cash") or sliders; the model re-scores the hospital instantly and the gauge shows the move.
@@ -133,6 +136,7 @@ SQL/01_model_panel.sql        features and label, one row per hospital-year (Pos
 Python/01_build_dataset.py    builds the panel, exports Data/model_panel.csv.gz
 Python/02_train_model.py      tuning, backtests, final model, scores and reasons for every hospital
 Python/03_build_notebook.py   builds and runs Python/03_model_report.ipynb (results and charts)
+Python/04_hospital_locations.py  places each hospital at its ZIP code centre (Census 2023 ZCTA gazetteer) for the map
 models/                       metrics.json, backtest.csv, test predictions, calibration, feature importance
 app/app.py                    Streamlit app; app/data/ holds the scores, the model and profit history
 run_all.py                    runs the three steps in order
@@ -143,7 +147,7 @@ run_all.py                    runs the three steps in order
 1. Build the database with the analytics project (`python run_all.py` in
    [US_Hospital_Financial_Performance_Analysis](https://github.com/Isaac-Agyapong/US_Hospital_Financial_Performance_Analysis)).
 2. `pip install -r requirements.txt`
-3. `python run_all.py` (about 5 minutes).
+3. `python run_all.py` (about 5 minutes; step 4 reads the cost report files downloaded by the analytics project).
 4. `streamlit run app/app.py`
 
 Without a database, `Data/model_panel.csv.gz` is included, so steps 2 and 3 can start from `Python/02_train_model.py`.

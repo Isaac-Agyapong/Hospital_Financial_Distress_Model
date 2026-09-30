@@ -14,7 +14,8 @@ from pathlib import Path
 PY = Path(__file__).resolve().parent / "Python"
 STEPS = [("01_build_dataset.py", "build the model panel in PostgreSQL and export Data/model_panel.csv.gz"),
          ("02_train_model.py", "tune, backtest, train the final model, score every hospital"),
-         ("03_build_notebook.py", "build and execute Python/03_model_report.ipynb")]
+         ("03_build_notebook.py", "build and execute Python/03_model_report.ipynb"),
+         ("04_hospital_locations.py", "place each hospital on the map (ZIP code centres) for the app")]
 
 if __name__ == "__main__":
     start = time.time()
