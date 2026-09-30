@@ -21,7 +21,7 @@ APP = Path(__file__).resolve().parent
 DATA, MODELS = APP / "data", APP.parent / "models"
 INDIGO, INDIGO_D, INDIGO_L, INDIGO_XL = "#3F37C9", "#2B2596", "#A5A1EA", "#ECEBFB"
 CORAL, AMBER, TEAL = "#E4572E", "#E8962E", "#12A594"
-INK, INK_2, INK_3, CANVAS, CARD, LINE = "#16162A", "#5C6076", "#9094A6", "#F4F4F9", "#FFFFFF", "#E7E7F0"
+INK, INK_2, INK_3, CANVAS, CARD, LINE = "#16162A", "#4F5368", "#6E7288", "#F4F4F9", "#FFFFFF", "#E7E7F0"
 LEVEL_COLOUR = {"High": CORAL, "Elevated": AMBER, "Lower": TEAL}
 LEVEL_BG = {"High": "#FCE7E1", "Elevated": "#FDF0DE", "Lower": "#DDF4F1"}
 LEVELS = ["High", "Elevated", "Lower"]
@@ -174,8 +174,8 @@ h3 {{ font-size: 1.02rem !important; font-weight: 700 !important; color: {INK}; 
 [class*="st-key-card-kpi"] {{ min-height: 128px; }}
 [class*="st-key-filters"] {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 16px; padding: 10px 16px 4px 16px; }}
 .eyebrow {{ font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: {INDIGO}; }}
-.sub {{ color: {INK_2}; font-size: 14px; line-height: 1.5; }}
-.muted {{ color: {INK_3}; font-size: 12.5px; }}
+.sub {{ color: {INK_2}; font-size: 14.5px; line-height: 1.55; }}
+.muted {{ color: {INK_3}; font-size: 13.2px; line-height: 1.45; }}
 .kpi-lab {{ color: {INK_2}; font-size: 13px; font-weight: 600; }}
 .kpi-num {{ font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin: 6px 0 2px 0; }}
 .kpi-ctx {{ color: {INK_3}; font-size: 12.5px; }}
@@ -236,7 +236,7 @@ div[data-testid="stMetricValue"] {{ font-weight: 800; }}
 .kpi2-lab {{ font-size: 13px; font-weight: 700; color: {INK_2}; line-height: 1.25; }}
 .kpi2-body {{ display: flex; justify-content: space-between; align-items: flex-end; gap: 10px; margin-top: 10px; }}
 .kpi2-num {{ font-size: 30px; font-weight: 800; letter-spacing: -0.025em; color: var(--c); line-height: 1.05; }}
-.kpi2-ctx {{ font-size: 12.2px; color: {INK_3}; margin-top: 4px; line-height: 1.35; display: -webkit-box;
+.kpi2-ctx {{ font-size: 12.8px; color: {INK_2}; margin-top: 4px; line-height: 1.35; display: -webkit-box;
     -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }}
 .kpi2-vis {{ flex: none; }}
 .sec {{ display: flex; gap: 11px; align-items: center; margin-bottom: 8px; }}
@@ -280,11 +280,26 @@ div[data-testid="stMetricValue"] {{ font-weight: 800; }}
 .step-n {{ font-size: 11px; font-weight: 800; color: {INDIGO}; letter-spacing: .1em; }}
 .step-t {{ font-size: 14.5px; font-weight: 800; color: {INK}; margin: 4px 0 4px 0; }}
 .step-d {{ font-size: 12.8px; color: {INK_2}; line-height: 1.45; }}
+.journey {{ position: relative; display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; margin-top: 8px; }}
+.journey::before {{ content: ""; position: absolute; left: 12%; right: 12%; top: 43px; height: 3px; border-radius: 3px;
+    background: linear-gradient(90deg, {INDIGO}, {TEAL}, {AMBER}, {CORAL}); opacity: .35; }}
+.jr {{ position: relative; background: #fff; border: 1px solid {LINE}; border-top: 4px solid var(--c); border-radius: 18px;
+    padding: 18px 18px 20px 18px; text-align: center; box-shadow: 0 6px 18px rgba(22,22,42,.05); animation: rise .6s both; }}
+.jr-dot {{ width: 48px; height: 48px; border-radius: 50%; margin: 0 auto 10px auto; display: grid; place-items: center;
+    background: var(--c); color: white; box-shadow: 0 6px 16px color-mix(in srgb, var(--c) 40%, transparent); }}
+.jr-dot .msym {{ font-size: 24px; }}
+.jr-n {{ font-size: 11.5px; font-weight: 800; letter-spacing: .12em; text-transform: uppercase; color: var(--c); }}
+.jr-t {{ font-size: 17px; font-weight: 800; color: {INK}; margin: 4px 0 8px 0; letter-spacing: -0.01em; }}
+.jr-d {{ font-size: 14px; color: {INK_2}; line-height: 1.6; }}
+.note {{ display: flex; gap: 12px; align-items: flex-start; margin: 18px 0 6px 0; padding: 14px 16px; border-radius: 14px;
+    background: #FFF7EC; border: 1px solid #F8DDB6; font-size: 14px; color: #5B4A33; line-height: 1.55; }}
+.note .msym {{ color: {AMBER}; font-size: 22px; }}
+.note b {{ color: #3D2F1C; }}
 .waffles {{ display: flex; justify-content: space-around; gap: 12px; flex-wrap: wrap; padding-top: 6px; }}
 .waffle {{ text-align: center; }}
 .waffle-n {{ font-size: 24px; font-weight: 800; letter-spacing: -0.02em; margin-top: 10px; }}
 .waffle-l {{ font-size: 12.5px; color: {INK_2}; font-weight: 600; }}
-.foot {{ color: {INK_3}; font-size: 12px; margin-top: 18px; }}
+.foot {{ color: {INK_2}; font-size: 12.8px; margin-top: 22px; line-height: 1.5; }}
 </style>""", unsafe_allow_html=True)
 
 LOGO = f"""<svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
@@ -363,7 +378,7 @@ def spark_svg(vals, colour, w=118, h=46, zero=True):
             f'<circle cx="{xs[-1]:.1f}" cy="{ys[-1]:.1f}" r="3.8" fill="{colour}" stroke="white" stroke-width="1.6"/></svg>')
 
 
-def mixbar_svg(shares, w=124, h=12):
+def mixbar_svg(shares, w=138, h=12):
     """One rounded bar split into the three risk levels (shares in %)."""
     x, parts = 0.0, ""
     for L in LEVELS:
@@ -375,7 +390,7 @@ def mixbar_svg(shares, w=124, h=12):
     legend = "".join(f'<tspan fill="{LEVEL_COLOUR[L]}">● </tspan><tspan>{shares.get(L, 0):.0f}%  </tspan>' for L in LEVELS)
     return (f'<svg width="{w}" height="{h + 20}" viewBox="0 0 {w} {h + 20}"><defs><clipPath id="{cid}">'
             f'<rect width="{w}" height="{h}" rx="{h / 2}"/></clipPath></defs><g clip-path="url(#{cid})">{parts}</g>'
-            f'<text x="0" y="{h + 15}" font-size="10" font-weight="700" fill="{INK_2}" font-family="Plus Jakarta Sans">{legend}</text></svg>')
+            f'<text x="0" y="{h + 15}" font-size="11.5" font-weight="700" fill="{INK_2}" font-family="Plus Jakarta Sans">{legend}</text></svg>')
 
 
 def streak_svg(ccn, w=124, years=9):
@@ -616,10 +631,12 @@ def overview():
                     values.append(r.n); colours.append(LEVEL_COLOUR[r.risk_level])
         fig = go.Figure(go.Sunburst(ids=ids, labels=labels, parents=parents, values=values, branchvalues="total",
                                     marker=dict(colors=colours, line=dict(color="white", width=1.5)),
-                                    insidetextorientation="radial", textfont=dict(size=12),
+                                    insidetextorientation="radial", textfont=dict(size=13),
                                     hovertemplate="<b>%{label}</b><br>%{value:,} hospitals<br>%{percentParent:.0%} of "
                                                   "%{parent}<extra></extra>"))
-        plot(styled(fig, 400))
+        fig = styled(fig, 420)
+        fig.update_layout(uniformtext=dict(minsize=12, mode="hide"))
+        plot(fig)
     with right, card("list"):
         top = st.columns([1.7, 1.6])
         with top[0]:
@@ -631,10 +648,11 @@ def overview():
             table, hide_index=True, use_container_width=True, height=360, on_select="rerun",
             selection_mode="single-row", key="table",
             column_config={
-                "label": st.column_config.TextColumn("Hospital", width="large"),
-                "percentile": st.column_config.ProgressColumn("Risk", min_value=0, max_value=100, format="%.0f"),
-                "margin": st.column_config.NumberColumn("Margin", format="%.1f%%"),
-                "loss_streak": st.column_config.NumberColumn("Years losing")})
+                "label": st.column_config.TextColumn("Hospital", width=250),
+                "percentile": st.column_config.ProgressColumn("Risk score", min_value=0, max_value=100, format="%.0f",
+                                                              width=100),
+                "margin": st.column_config.NumberColumn("Margin", format="%.1f%%", width=72),
+                "loss_streak": st.column_config.NumberColumn("Loss years", width=76)})
         rows = ev.selection.rows if ev is not None else []
         if rows:
             open_profile(table.iloc[rows[0]].label)
@@ -660,7 +678,7 @@ def swarm(h):
                     marker=dict(size=34, color=LEVEL_COLOUR[h.risk_level], opacity=0.2))
     fig.add_scatter(x=[hx], y=[0], mode="markers", showlegend=False, hoverinfo="skip",
                     marker=dict(size=15, color=LEVEL_COLOUR[h.risk_level], line=dict(color="white", width=3)))
-    fig.add_annotation(x=hx, y=0, ax=0, ay=-78, text=f"<b>{h['name'][:32]}</b><br>score {hx:.0f} · #{int(h.risk_rank):,}",
+    fig.add_annotation(x=hx, y=0, ax=0, ay=-78, text=f"<b>{h['name'][:44]}</b><br>score {hx:.0f} · #{int(h.risk_rank):,}",
                        showarrow=True, arrowhead=0, arrowwidth=1.5, arrowcolor=INK, bgcolor="white",
                        bordercolor=LINE, borderpad=6, font=dict(size=12, color=INK, family="Plus Jakarta Sans"))
     for xv, lab in [(100 * Q70, "elevated"), (100 * Q90, "high")]:
@@ -967,7 +985,7 @@ def performance():
     auc, auc_rule = MAIN.loc["XGBoost", "roc_auc"], MAIN.drop(index=["XGBoost", "Logistic regression"]).roc_auc.max()
     bars = (f'<svg width="96" height="62" viewBox="0 0 96 62">'
             f'<rect x="10" y="{58 - 50}" width="30" height="50" rx="7" fill="{TEAL}" style="animation:pop .5s both"/>'
-            f'<rect x="54" y="{58 - 50 * hr / hm:.0f}" width="30" height="{50 * hr / hm:.0f}" rx="7" fill="#CFCBC2" '
+            f'<rect x="54" y="{58 - 50 * hr / hm:.0f}" width="30" height="{50 * hr / hm:.0f}" rx="7" fill="#F29B38" '
             f'style="animation:pop .5s .15s both"/></svg>')
     c = st.columns(4)
     kpi(c[0], "p1", "High-risk picks that were right", f"{HIT} in 100", "2021 reports, outcome 2022-2023", INDIGO,
@@ -976,7 +994,7 @@ def performance():
         "rule", ring_svg(rule, "#F29B38", text=f"{rule}", track="#FDEBD5"), 1)
     kpi(c[2], "p3", "Early warnings caught", f"+{hm - hr}", f"{hm} vs {hr} among hospitals still making money", TEAL,
         "notifications_active", bars, 2)
-    kpi(c[3], "p4", "Ranking accuracy (ROC-AUC)", f"{auc:.2f}", f"best rule {auc_rule:.2f} · 0.5 = guessing", INDIGO_D,
+    kpi(c[3], "p4", "Ranking accuracy", f"{auc:.2f}", f"ROC-AUC · best rule {auc_rule:.2f} · 0.5 = a coin flip", INDIGO_D,
         "leaderboard", ring_svg(100 * (auc - 0.5) / 0.5, INDIGO_D, text=f"{auc:.2f}", track=INDIGO_XL), 3)
     st.write("")
     left, right = st.columns([1.2, 1])
@@ -1010,25 +1028,25 @@ def performance():
         html(f'<div class="waffles">{cells}</div><div style="height:14px"></div>')
     st.write("")
     with card("method"):
-        section("science", "How it works", f"Built from public data, tested the way it would be used")
-        steps = [("1 · DATA", "Hospital financial reports",
-                  "Every Medicare hospital's yearly cost report, 2011-2023, cleaned and checked in PostgreSQL. "
-                  "46,946 hospital-years with a known outcome."),
-                 ("2 · QUESTION", "Two years of losses?",
-                  "From one year's report: will the hospital lose money in both of the next two years?"),
-                 ("3 · MODEL", f"XGBoost on {len(FEATURES)} signals",
-                  "Profit history, patient-care profit, loss streak, cash, debt, costs, agency staff, staffing, patient mix, "
-                  "size, and the state and national picture."),
-                 ("4 · TEST", "Years it never saw",
-                  "Settings chosen on 2017-2018 only; tested on 2019, 2020 and 2021 reports against rules of thumb.")]
-        sc = st.columns(4)
-        for col, (n, t_, d_) in zip(sc, steps):
-            col.markdown(f'<div class="step"><div class="step-n">{n}</div><div class="step-t">{t_}</div>'
-                         f'<div class="step-d">{d_}</div></div>', unsafe_allow_html=True)
-        st.markdown(f'<div class="muted" style="margin-top:12px">Limits: hospitals that close stop filing, so closures are not '
-                    f'counted; scores drift with the economy, so the app shows risk levels with their track record instead of '
-                    f'exact chances. Explanations are exact per-factor contributions from the trees (the same idea as SHAP).</div>',
-                    unsafe_allow_html=True)
+        section("route", "How it works", "Four steps, from public data to a tested early warning")
+        steps = [("database", INDIGO, "Step 1", "Real public data",
+                  "The yearly financial report every US hospital files with Medicare, 2011 to 2023: about 47,000 "
+                  "hospital-years."),
+                 ("help", TEAL, "Step 2", "One clear question",
+                  "From this year's report, will the hospital lose money in both of the next two years?"),
+                 ("model_training", AMBER, "Step 3", f"{len(FEATURES)} warning signs",
+                  "Profit history, cash, debt, staffing costs, patient mix and the local economy. The model learns which "
+                  "combinations lead to trouble."),
+                 ("verified", CORAL, "Step 4", "Tested on the future",
+                  "Trained only on older years, then checked on 2019-2021 reports it had never seen, against simple rules.")]
+        cells = "".join(
+            f'<div class="jr" style="--c:{c};animation-delay:{0.08 * i:.2f}s"><div class="jr-dot"><span class="msym">{ic}</span></div>'
+            f'<div class="jr-n">{n}</div><div class="jr-t">{ti}</div><div class="jr-d">{de}</div></div>'
+            for i, (ic, c, n, ti, de) in enumerate(steps))
+        html(f"""<div class="journey">{cells}</div>
+            <div class="note"><span class="msym">info</span><div><b>Good to know.</b> Hospitals that close stop filing reports,
+            so closures are not counted. Scores shift with the economy, so the app shows risk levels with their track record
+            rather than exact chances. The reasons shown for each hospital come straight from the model.</div></div>""")
     footer()
 
 
