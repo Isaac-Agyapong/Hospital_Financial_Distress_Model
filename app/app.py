@@ -2,10 +2,11 @@
 
     streamlit run app/app.py
 
-Reads app/data/ (written by Python/02_train_model.py): the latest risk score for every hospital, its top reasons,
-the trained XGBoost model (for the "What if?" page) and each hospital's profit history.
-Design: soft "bento" layout: lavender-grey canvas, rounded white cards, indigo for the model, coral for risk,
-Plus Jakarta Sans, navigation in the sidebar.
+Reads app/data/ (written by Python/02_train_model.py): the latest risk score for every hospital, the trained XGBoost
+model (used live for explanations and the what-if simulator) and each hospital's profit history; and models/ for the
+test results. Design: product-style "bento" layout (lavender canvas, white cards, indigo for the model, coral for
+risk), Plus Jakarta Sans, Material icons in a sidebar, filters that drive every chart, click-through from the map and
+the table to a hospital profile.
 """
 import json
 from pathlib import Path
@@ -16,411 +17,629 @@ import plotly.graph_objects as go
 import streamlit as st
 import xgboost as xgb
 
-DATA = Path(__file__).parent / "data"
-INDIGO, INDIGO_L, CORAL, CORAL_L, AMBER, TEAL = "#3F37C9", "#A5A1EA", "#E4572E", "#F8C9BA", "#F2A541", "#12A594"
-INK, INK_2, CANVAS, CARD, LINE = "#1B1B2F", "#62667A", "#F3F3F9", "#FFFFFF", "#E6E6F0"
+APP = Path(__file__).resolve().parent
+DATA, MODELS = APP / "data", APP.parent / "models"
+INDIGO, INDIGO_D, INDIGO_L, INDIGO_XL = "#3F37C9", "#2B2596", "#A5A1EA", "#ECEBFB"
+CORAL, AMBER, TEAL = "#E4572E", "#E8962E", "#12A594"
+INK, INK_2, INK_3, CANVAS, CARD, LINE = "#16162A", "#5C6076", "#9094A6", "#F4F4F9", "#FFFFFF", "#E7E7F0"
 LEVEL_COLOUR = {"High": CORAL, "Elevated": AMBER, "Lower": TEAL}
-MODELS = Path(__file__).resolve().parents[1] / "models"
+LEVEL_BG = {"High": "#FCE7E1", "Elevated": "#FDF0DE", "Lower": "#DDF4F1"}
+LEVELS = ["High", "Elevated", "Lower"]
 
-st.set_page_config(page_title="Hospital Financial Distress Forecast", page_icon="🏥", layout="wide")
+st.set_page_config(page_title="Hospital Financial Distress Forecast", page_icon=":material/monitor_heart:",
+                   layout="wide", initial_sidebar_state="expanded")
 
 
-# ---------------------------------------------------------------------------------------------------- data
+# ================================================================================================= data and model
 @st.cache_data
 def load():
     s = pd.read_csv(DATA / "hospital_scores.csv", dtype={"ccn": str})
-    s["label"] = s.hospital_name + " (" + s.city.fillna("").str.title() + ", " + s.state_abbrev + ")"
+    s["city"] = s.city.fillna("").str.title()
+    s["name"] = s.hospital_name.str.strip()
+    s["label"] = s.name + " (" + s.city + ", " + s.state_abbrev + ")"
     dup = s.label.duplicated(keep=False)
     s.loc[dup, "label"] += " #" + s.loc[dup, "ccn"]
+    s["type_short"] = s.hospital_type.map({"General acute care": "General", "Critical access": "Critical access"})
+    s["percentile"] = 100 * s.risk.rank(pct=True)
     hist = pd.read_csv(DATA / "margin_history.csv", dtype={"ccn": str})
     meta = json.loads((DATA / "features.json").read_text(encoding="utf-8"))
     limits = json.loads((DATA / "winsor_limits.json").read_text(encoding="utf-8"))
-    return s.sort_values("risk_rank"), hist, meta, limits
+    return s.sort_values("risk_rank").reset_index(drop=True), hist, meta, limits
+
+
+@st.cache_data
+def test_results():
+    """Numbers quoted in the app, read from the saved test results so they always match the model."""
+    bt = pd.read_csv(MODELS / "backtest.csv")
+    t = pd.read_csv(MODELS / "test_predictions_2021.csv")
+    q70, q90 = t.risk.quantile(0.7), t.risk.quantile(0.9)
+    lvl = np.select([t.risk >= q90, t.risk >= q70], ["High", "Elevated"], "Lower")
+    track = {k: round(100 * t.actual[lvl == k].mean()) for k in LEVELS}
+    return bt, track
 
 
 @st.cache_resource
-def model():
+def booster():
     m = xgb.XGBClassifier()
     m.load_model(DATA / "xgb_final.json")
     return m
 
 
-@st.cache_data
-def test_results():
-    """Numbers quoted on the pages, read from the saved test results so they always match the model."""
-    bt = pd.read_csv(MODELS / "backtest.csv")
-    t = pd.read_csv(MODELS / "test_predictions_2021.csv")
-    q70, q90 = t.risk.quantile(0.7), t.risk.quantile(0.9)
-    lvl = np.select([t.risk >= q90, t.risk >= q70], ["High", "Elevated"], "Lower")
-    track = {k: round(100 * t.actual[lvl == k].mean()) for k in ("High", "Elevated", "Lower")}
-    main = bt[(bt.test_year == 2021) & (bt.group == "All hospitals")].set_index("model")
-    early = bt[(bt.test_year == 2021) & (bt.group == "Made money this year")].set_index("model")
-    auc = bt[bt.group == "All hospitals"].groupby("model").roc_auc.agg(["min", "max"])
-    return track, main, early, auc
-
-
 SCORES, HIST, META, LIMITS = load()
+BT, TRACK = test_results()
 N = len(SCORES)
+FEATURES = META["numeric"] + META["categorical"]
 Q70, Q90 = SCORES.risk.quantile(0.70), SCORES.risk.quantile(0.90)
-TRACK, MAIN, EARLY, AUC = test_results()
-P = lambda model: round(100 * MAIN.loc[model, "precision_top"])      # noqa: E731
+MAIN = BT[(BT.test_year == 2021) & (BT.group == "All hospitals")].set_index("model")
+EARLY = BT[(BT.test_year == 2021) & (BT.group == "Made money this year")].set_index("model")
+HIT = round(100 * MAIN.loc["XGBoost", "precision_top"])
+
+
+def frame(rows):
+    X = pd.DataFrame(rows)[FEATURES].copy()
+    for c in META["numeric"]:
+        X[c] = pd.to_numeric(X[c], errors="coerce").astype(float)
+    for c, (lo, hi) in LIMITS.items():
+        X[c] = X[c].clip(lo, hi)
+    for c in META["categorical"]:
+        X[c] = pd.Categorical(X[c].astype(str), categories=META["categories"][c])
+    return X
+
+
+def predict(row):
+    return float(booster().predict_proba(frame([row]))[:, 1][0])
+
+
+def contributions(row):
+    """Exact per-feature contributions (log-odds) from the trees: positive = pushes risk up."""
+    X = frame([row])
+    c = booster().get_booster().predict(xgb.DMatrix(X, enable_categorical=True), pred_contribs=True)[0]
+    return pd.Series(c[:-1], index=FEATURES)
 
 
 def level_of(risk):
     return "High" if risk >= Q90 else "Elevated" if risk >= Q70 else "Lower"
 
 
-def predict(row):
-    """Score one hospital's (possibly edited) values exactly as in training."""
-    X = pd.DataFrame([row])[META["numeric"] + META["categorical"]].copy()
-    for c, (lo, hi) in LIMITS.items():
-        X[c] = X[c].astype(float).clip(lo, hi)
-    for c in META["numeric"]:
-        X[c] = X[c].astype(float)
-    for c in META["categorical"]:
-        X[c] = pd.Categorical(X[c].astype(str), categories=META["categories"][c])
-    return float(model().predict_proba(X)[:, 1][0])
+def percentile_of(risk):
+    return 100 * (SCORES.risk <= risk).mean()
 
 
-# ---------------------------------------------------------------------------------------------------- style
+PCT = {"total_margin", "operating_margin", "margin_last_year", "margin_two_years_ago", "operating_margin_last_year",
+       "other_income_share", "other_income_share_last_year", "revenue_growth", "discharge_growth", "occupancy_rate",
+       "debt_ratio", "cost_growth", "contract_labor_pct", "medicaid_day_share", "medicare_day_share",
+       "uncompensated_care_pct", "salary_share_of_costs", "state_median_margin", "state_share_losing",
+       "us_median_margin"}
+
+
+def show_value(f, v):
+    if isinstance(v, float) and np.isnan(v) or v is None:
+        return "not reported"
+    if f in PCT:
+        return f"{100 * v:.1f}%"
+    if f == "margin_change":
+        return f"{100 * v:+.1f} points"
+    if f in ("days_cash_on_hand",):
+        return "not reliable" if v < 0 else f"{v:.0f} days"
+    if f == "days_cash_change":
+        return f"{v:+.0f} days"
+    if f == "cost_per_discharge":
+        return f"${v:,.0f}"
+    if f == "log_revenue":
+        r = np.exp(v)
+        return f"${r / 1e9:.1f}B revenue" if r >= 1e9 else f"${r / 1e6:.0f}M revenue"
+    if f in ("current_ratio", "charge_to_cost"):
+        return f"{v:.1f}x"
+    if f == "current_ratio_change":
+        return f"{v:+.2f}"
+    if f in ("loss", "medicaid_expanded_now"):
+        return "yes" if v else "no"
+    if f == "staff_per_bed":
+        return f"{v:.1f}"
+    if f in ("loss_streak", "beds"):
+        return f"{v:.0f}"
+    return str(v)
+
+
+# ================================================================================================= style
 st.markdown(f"""
 <style>
 @import url('https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:wght@400;500;600;700;800&display=swap');
-.stApp, .stApp * {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
+html, body, .stApp, .stApp p, .stApp div, .stApp span, .stApp label, .stApp input, .stApp button, .stApp li,
+.stApp h1, .stApp h2, .stApp h3, .stApp h4, .stApp td, .stApp th {{ font-family: 'Plus Jakarta Sans', sans-serif; }}
+/* keep Streamlit's icon font (the rule above would otherwise turn icons into words) */
+.stApp [data-testid="stIconMaterial"], .stApp span[class*="material"], .stApp .material-symbols-rounded {{
+    font-family: 'Material Symbols Rounded' !important; }}
 .stApp {{ background: {CANVAS}; }}
-[data-testid="stHeader"] {{ background: transparent; }}
-.block-container {{ padding-top: 2.2rem; max-width: 1240px; }}
+[data-testid="stHeader"] {{ background: transparent; height: 0; }}
+[data-testid="stToolbar"] {{ top: 6px; }}
+.block-container {{ padding: 1.6rem 2.2rem 2rem 2.2rem; max-width: 1320px; }}
+h1 {{ font-size: 1.9rem !important; font-weight: 800 !important; letter-spacing: -0.03em; color: {INK}; margin: 0 !important; padding: 0 !important; }}
+h3 {{ font-size: 1.02rem !important; font-weight: 700 !important; color: {INK}; margin: 0 0 2px 0 !important; padding: 0 !important; }}
+/* sidebar */
 [data-testid="stSidebar"] {{ background: {CARD}; border-right: 1px solid {LINE}; }}
-[data-testid="stSidebarNav"] a span {{ font-weight: 600; }}
-h1, h2, h3, h1 *, h2 *, h3 * {{ color: {INK}; letter-spacing: -0.02em; font-family: 'Plus Jakarta Sans', sans-serif !important; }}
-/* sidebar: brand block above the page links */
+[data-testid="stSidebar"] > div {{ overflow-x: hidden; }}
 [data-testid="stSidebarContent"] {{ display: flex; flex-direction: column; }}
-[data-testid="stSidebarUserContent"] {{ order: 1; padding-top: 0.5rem; padding-bottom: 0; }}
-[data-testid="stSidebarNav"] {{ order: 2; margin-top: 14px; padding-top: 14px; border-top: 1px solid {LINE}; }}
-[data-testid="stSidebarHeader"] {{ order: 0; }}
-[class*="st-key-card"] {{ background: {CARD}; border: 1px solid {LINE} !important; border-radius: 22px;
-    padding: 18px 20px 14px 20px; box-shadow: 0 6px 24px rgba(40, 40, 90, 0.06); }}
-[class*="st-key-hero"] {{ background: linear-gradient(135deg, #2B2596 0%, {INDIGO} 55%, #6A62E0 100%);
-    border-radius: 26px; padding: 28px 30px; color: white; box-shadow: 0 12px 30px rgba(63, 55, 201, 0.25); }}
-[class*="st-key-hero"] * {{ color: white; }}
-.eyebrow {{ font-size: 12px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; color: {INDIGO}; }}
-.big {{ font-size: 44px; font-weight: 800; line-height: 1.05; letter-spacing: -0.03em; }}
-.sub {{ color: {INK_2}; font-size: 14.5px; }}
-.pill {{ display: inline-block; padding: 4px 12px; border-radius: 999px; font-weight: 700; font-size: 13px; }}
-.reason {{ padding: 10px 14px; border-radius: 14px; background: {CANVAS}; margin-bottom: 8px; font-size: 14.5px; }}
-.kpi-num {{ font-size: 34px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.1; }}
-.kpi-lab {{ color: {INK_2}; font-size: 13.5px; }}
-.foot {{ color: {INK_2}; font-size: 12px; margin-top: 24px; }}
+[data-testid="stSidebarHeader"] {{ order: 0; height: 2rem; }}
+[data-testid="stSidebarUserContent"] {{ order: 1; padding: 0 1.1rem 0.4rem 1.1rem; }}
+[data-testid="stSidebarNav"] {{ order: 2; padding: 0 0.5rem; }}
+[data-testid="stSidebarNav"] a {{ border-radius: 10px; padding: 0.42rem 0.7rem; }}
+[data-testid="stSidebarNav"] a span {{ font-weight: 600; font-size: 14px; color: {INK_2}; }}
+[data-testid="stSidebarNav"] a[aria-current="page"] {{ background: {INDIGO_XL}; }}
+[data-testid="stSidebarNav"] a[aria-current="page"] span {{ color: {INDIGO}; }}
+/* cards */
+[class*="st-key-card"] {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 18px;
+    padding: 16px 18px 12px 18px; box-shadow: 0 1px 2px rgba(22,22,42,.04), 0 8px 24px rgba(22,22,42,.05); }}
+[class*="st-key-card-kpi"] {{ min-height: 128px; }}
+[class*="st-key-filters"] {{ background: {CARD}; border: 1px solid {LINE}; border-radius: 16px; padding: 10px 16px 4px 16px; }}
+.eyebrow {{ font-size: 11.5px; font-weight: 700; letter-spacing: .1em; text-transform: uppercase; color: {INDIGO}; }}
+.sub {{ color: {INK_2}; font-size: 14px; line-height: 1.5; }}
+.muted {{ color: {INK_3}; font-size: 12.5px; }}
+.kpi-lab {{ color: {INK_2}; font-size: 13px; font-weight: 600; }}
+.kpi-num {{ font-size: 30px; font-weight: 800; letter-spacing: -0.02em; line-height: 1.15; margin: 6px 0 2px 0; }}
+.kpi-ctx {{ color: {INK_3}; font-size: 12.5px; }}
+.badge {{ display: inline-flex; align-items: center; gap: 6px; padding: 4px 11px; border-radius: 999px;
+    font-weight: 700; font-size: 12.5px; }}
+.dot {{ width: 8px; height: 8px; border-radius: 50%; display: inline-block; }}
+.chip {{ display: inline-block; padding: 3px 10px; border-radius: 8px; background: {CANVAS}; color: {INK_2};
+    font-size: 12.5px; font-weight: 600; margin: 0 6px 6px 0; border: 1px solid {LINE}; }}
+.brand {{ display: flex; align-items: center; gap: 10px; margin: 2px 0 14px 0; }}
+.brand-name {{ font-weight: 800; font-size: 15px; color: {INK}; line-height: 1.15; }}
+.brand-name span {{ color: {INDIGO}; }}
+.side-foot {{ color: {INK_3}; font-size: 12px; margin-top: 10px; padding-top: 10px; border-top: 1px solid {LINE}; }}
+.stTabs [data-baseweb="tab-list"] {{ gap: 6px; }}
+.stTabs [data-baseweb="tab"] {{ font-weight: 600; }}
+div[data-testid="stMetricValue"] {{ font-weight: 800; }}
+.foot {{ color: {INK_3}; font-size: 12px; margin-top: 18px; }}
 </style>""", unsafe_allow_html=True)
+
+LOGO = f"""<svg width="34" height="34" viewBox="0 0 34 34" xmlns="http://www.w3.org/2000/svg">
+<defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="{INDIGO_D}"/>
+<stop offset="1" stop-color="#6A62E0"/></linearGradient></defs><rect width="34" height="34" rx="9" fill="url(#g)"/>
+<polyline points="6,19 11,19 14,12 18,24 21,16 23,19 28,19" fill="none" stroke="white" stroke-width="2.4"
+stroke-linecap="round" stroke-linejoin="round"/></svg>"""
 
 
 def card(key):
-    return st.container(border=False, key=f"card-{key}")
+    return st.container(key=f"card-{key}")
 
 
-def kpi(col, key, num, label, colour=INK):
-    with col, card(key):
-        st.markdown(f'<div class="kpi-num" style="color:{colour}">{num}</div><div class="kpi-lab">{label}</div>',
-                    unsafe_allow_html=True)
+def badge(level, text=None):
+    return (f'<span class="badge" style="background:{LEVEL_BG[level]};color:{LEVEL_COLOUR[level]}">'
+            f'<span class="dot" style="background:{LEVEL_COLOUR[level]}"></span>{text or level + " risk"}</span>')
 
 
-def pill(level):
-    return (f'<span class="pill" style="background:{LEVEL_COLOUR[level]}22;color:{LEVEL_COLOUR[level]}">'
-            f'{level} risk</span>')
+def kpi(col, key, label, num, ctx, colour=INK):
+    with col, card(f"kpi-{key}"):
+        st.markdown(f'<div class="kpi-lab">{label}</div><div class="kpi-num" style="color:{colour}">{num}</div>'
+                    f'<div class="kpi-ctx">{ctx}</div>', unsafe_allow_html=True)
 
 
-def fig_layout(fig, h=320):
-    fig.update_layout(height=h, margin=dict(l=10, r=10, t=10, b=10), paper_bgcolor="rgba(0,0,0,0)",
-                      plot_bgcolor="rgba(0,0,0,0)", font=dict(family="Plus Jakarta Sans", color=INK, size=13))
+def heading(eyebrow, title, sub=None):
+    st.markdown(f'<div class="eyebrow">{eyebrow}</div>', unsafe_allow_html=True)
+    st.markdown(f"# {title}")
+    if sub:
+        st.markdown(f'<div class="sub" style="margin:4px 0 14px 0">{sub}</div>', unsafe_allow_html=True)
+
+
+def styled(fig, h=320, legend=False):
+    fig.update_layout(height=h, margin=dict(l=8, r=8, t=8, b=8), paper_bgcolor="rgba(0,0,0,0)",
+                      plot_bgcolor="rgba(0,0,0,0)", showlegend=legend, hoverlabel=dict(font_family="Plus Jakarta Sans"),
+                      font=dict(family="Plus Jakarta Sans", color=INK, size=12.5))
     return fig
 
 
+def plot(fig, **kw):
+    return st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False}, **kw)
+
+
 def footer():
-    st.markdown('<div class="foot">Built by <b>Isaac Agyapong</b> · Data: CMS Hospital Provider Cost Reports 2011-2023 · '
-                'A statistical estimate from public reports, not a judgment about any hospital. · '
-                '<a href="https://github.com/Isaac-Agyapong/Hospital_Financial_Distress_Model">Code on GitHub</a></div>',
+    st.markdown('<div class="foot">Built by <b>Isaac Agyapong</b> · Data: CMS Hospital Provider Cost Reports 2011-2023. Scores are statistical estimates '
+                'from public reports, not judgments about how any hospital is run. · '
+                '<a href="https://github.com/Isaac-Agyapong/Hospital_Financial_Distress_Model">Code and method</a></div>',
                 unsafe_allow_html=True)
 
 
-def hospital_picker(key):
+def open_profile(label):
+    st.session_state["hospital"] = label
+    st.switch_page(PAGES["profile"])
+
+
+def current_hospital():
     labels = SCORES.label.tolist()
-    # first visit: a mid-sized hospital just below the high-risk line with a margin near zero, so the What if?
-    # sliders can move it between risk levels
-    near = SCORES[SCORES.risk_rank.between(int(0.10 * N), int(0.13 * N)) & SCORES.total_margin.between(-0.05, 0.03)
-                  & (SCORES.beds >= 100)]
-    start = near.label.iloc[0] if len(near) else labels[int(0.10 * N)]
-    default = labels.index(st.session_state.get("hospital", start)) if st.session_state.get("hospital") in labels         else labels.index(start)
-    choice = st.selectbox("Search for a hospital by name, city or state", labels, index=default, key=key)
+    if st.session_state.get("hospital") not in labels:
+        near = SCORES[SCORES.risk_rank.between(int(0.10 * N), int(0.13 * N)) & SCORES.total_margin.between(-0.05, 0.03)
+                      & (SCORES.beds >= 100)]
+        st.session_state["hospital"] = near.label.iloc[0] if len(near) else labels[0]
+    return st.session_state["hospital"]
+
+
+def hospital_search(key):
+    labels = SCORES.label.tolist()
+    cur = current_hospital()
+    choice = st.selectbox("Hospital", labels, index=labels.index(cur), key=key, label_visibility="collapsed",
+                          placeholder="Search by hospital name, city or state")
     st.session_state["hospital"] = choice
     return SCORES[SCORES.label == choice].iloc[0]
 
 
-# ---------------------------------------------------------------------------------------------------- pages
-def home():
-    n_high = int((SCORES.risk_level == "High").sum())
-    with st.container(key="hero"):
-        st.markdown(f'<div style="font-size:13px;font-weight:700;letter-spacing:.12em;opacity:.8">HOSPITAL FINANCIAL '
-                    f'DISTRESS FORECAST · 2024-2025</div>'
-                    f'<div class="big" style="margin:10px 0 8px 0">{n_high} US hospitals are at high risk of losing money '
-                    f'two years in a row</div>'
-                    f'<div style="font-size:16px;opacity:.9;max-width:820px">A machine learning model read the latest '
-                    f'financial report of {N:,} hospitals and ranked how likely each one is to lose money in both of the '
-                    f'next two years. When I tested it on years it had never seen, {round(P("XGBoost") / 10)} in 10 of the hospitals '
-                    f'it flagged as high risk did.</div>', unsafe_allow_html=True)
+# ================================================================================================= pages
+def overview():
+    heading("Outlook 2024-2025", "Which hospitals are heading for financial trouble?",
+            f"Every US hospital's latest financial report, scored by a machine learning model for the chance of "
+            f"losing money in <b>both</b> of the next two years. Tested on years it never saw, {HIT} in 100 of its "
+            f"high-risk picks did.")
+    st.session_state.setdefault("f_state", "All states")
+    # a click on the map (stored by the chart from the last run) sets the state filter before it is drawn
+    ev = st.session_state.get("map")
+    pts = (ev or {}).get("selection", {}).get("points", []) if ev else []
+    loc = pts[0].get("location") if pts else None
+    if loc and loc != st.session_state.get("map_applied"):
+        st.session_state["f_state"] = loc
+        st.session_state["map_applied"] = loc
+    with st.container(key="filters"):
+        c = st.columns([1.2, 1.3, 1.6, 1.2])
+        states = ["All states"] + sorted(SCORES.state_abbrev.unique())
+        state = c[0].selectbox("State", states, key="f_state")
+        htype = c[1].pills("Hospital type", ["General", "Critical access"], selection_mode="multi", key="f_type")
+        owner = c[2].pills("Owner", ["Nonprofit", "For-profit", "Government"], selection_mode="multi", key="f_owner")
+        area = c[3].pills("Area", ["Urban", "Rural"], selection_mode="multi", key="f_area")
+    d = SCORES
+    if state != "All states":
+        d = d[d.state_abbrev == state]
+    if htype:
+        d = d[d.type_short.isin(htype)]
+    if owner:
+        d = d[d.ownership.isin(owner)]
+    if area:
+        d = d[d.rural_urban.isin(area)]
+    n = len(d)
+    if n == 0:
+        st.info("No hospitals match these filters.")
+        return
+    lv = d.risk_level.value_counts()
     st.write("")
     c = st.columns(4)
-    lv = SCORES.risk_level.value_counts()
-    kpi(c[0], "k1", f"{lv.get('High', 0):,}", "hospitals at <b>high</b> risk (top 10%)", CORAL)
-    kpi(c[1], "k2", f"{lv.get('Elevated', 0):,}", "at <b>elevated</b> risk (next 20%)", AMBER)
-    kpi(c[2], "k3", f"{lv.get('Lower', 0):,}", "at <b>lower</b> risk", TEAL)
-    kpi(c[3], "k4", f"{P('XGBoost')} in 100", "high-risk picks that then lost money 2 years (tested)", INDIGO)
+    kpi(c[0], "n", "Hospitals in view", f"{n:,}", "latest report, mostly 2023", INK)
+    kpi(c[1], "h", "High risk", f"{lv.get('High', 0):,}",
+        f"{100 * lv.get('High', 0) / n:.0f}% of view · {TRACK['High']} in 100 of these lost money in the test", CORAL)
+    kpi(c[2], "e", "Elevated risk", f"{lv.get('Elevated', 0):,}",
+        f"{100 * lv.get('Elevated', 0) / n:.0f}% of view · {TRACK['Elevated']} in 100 in the test", AMBER)
+    kpi(c[3], "m", "Typical profit margin", f"{100 * d.total_margin.median():.1f}%",
+        f"{100 * d.loss.mean():.0f}% of these hospitals lost money in their latest year", INDIGO)
     st.write("")
-    left, right = st.columns([1.55, 1])
+    left, right = st.columns([1.45, 1])
     with left, card("map"):
-        st.markdown('<div class="eyebrow">Where</div><h3 style="margin:2px 0 0 0">Share of each state\'s hospitals at high risk</h3>',
-                    unsafe_allow_html=True)
-        st_ = (SCORES.groupby("state_abbrev").agg(n=("ccn", "size"), high=("risk_level", lambda s: (s == "High").mean()))
-               .reset_index())
+        st.markdown("### Share of hospitals at high risk, by state")
+        st.markdown('<div class="muted">Click a state to focus on it</div>', unsafe_allow_html=True)
+        g = (d.groupby("state_abbrev").agg(n=("ccn", "size"), high=("risk_level", lambda s: (s == "High").sum()))
+             .reset_index().assign(share=lambda x: 100 * x.high / x.n))
         fig = go.Figure(go.Choropleth(
-            locations=st_.state_abbrev, z=100 * st_.high, locationmode="USA-states", marker_line_color="white",
-            colorscale=[[0, "#EEEDFB"], [0.35, INDIGO_L], [0.7, "#F08B6B"], [1, CORAL]], zmin=0, zmax=25,
-            colorbar=dict(title="% high risk", ticksuffix="%", thickness=12, len=0.7),
-            customdata=np.stack([st_.n, (st_.high * st_.n).round()], axis=1),
-            hovertemplate="<b>%{location}</b><br>%{z:.0f}% at high risk<br>%{customdata[1]:.0f} of %{customdata[0]} hospitals<extra></extra>"))
+            locations=g.state_abbrev, z=g.share, locationmode="USA-states", marker_line_color="white",
+            marker_line_width=1.2, zmin=0, zmax=30,
+            colorscale=[[0, "#F1F0FC"], [0.3, INDIGO_L], [0.65, "#EE8D6E"], [1, CORAL]],
+            colorbar=dict(ticksuffix="%", thickness=10, len=0.62, x=0.98, outlinewidth=0, tickfont=dict(size=11)),
+            customdata=np.stack([g.n, g.high], axis=1),
+            hovertemplate="<b>%{location}</b><br>%{z:.0f}% at high risk<br>%{customdata[1]} of %{customdata[0]} "
+                          "hospitals<extra></extra>"))
         fig.update_geos(scope="usa", bgcolor="rgba(0,0,0,0)", showlakes=False)
-        st.plotly_chart(fig_layout(fig, 380), use_container_width=True, config={"displayModeBar": False})
-    with right, card("who"):
-        st.markdown('<div class="eyebrow">Who</div><h3 style="margin:2px 0 8px 0">High risk by type of hospital</h3>',
-                    unsafe_allow_html=True)
-        groups = pd.concat([
-            SCORES.assign(g=SCORES.ownership.astype(str)),
-            SCORES.assign(g=SCORES.rural_urban.astype(str)),
-            SCORES.assign(g=SCORES.hospital_type.map({"General acute care": "General hospital",
-                                                     "Critical access": "Small rural (critical access)"}))])
-        share = groups.groupby("g").risk_level.apply(lambda s: 100 * (s == "High").mean()).sort_values()
-        fig = go.Figure(go.Bar(x=share.values, y=share.index, orientation="h", marker_color=INDIGO_L,
-                               text=[f"{v:.0f}%" for v in share.values], textposition="outside"))
-        fig.update_xaxes(visible=False, range=[0, share.max() * 1.3])
-        fig.update_yaxes(tickfont=dict(size=13))
-        st.plotly_chart(fig_layout(fig, 360), use_container_width=True, config={"displayModeBar": False})
+        plot(styled(fig, 330), on_select="rerun", selection_mode="points", key="map")
+    with right, card("mix"):
+        st.markdown("### Risk mix by owner and area")
+        st.markdown('<div class="muted">Share of each group in each risk level</div>', unsafe_allow_html=True)
+        groups = [("Nonprofit", d.ownership == "Nonprofit"), ("For-profit", d.ownership == "For-profit"),
+                  ("Government", d.ownership == "Government"), ("Urban", d.rural_urban == "Urban"),
+                  ("Rural", d.rural_urban == "Rural")]
+        rows = [(name, m.sum(), *[100 * (d[m].risk_level == L).mean() if m.sum() else 0 for L in LEVELS])
+                for name, m in groups if m.sum() > 0]
+        mix = pd.DataFrame(rows, columns=["group", "n"] + LEVELS)[::-1]
+        fig = go.Figure()
+        for L in LEVELS:
+            fig.add_bar(y=mix.group, x=mix[L], name=L, orientation="h", marker_color=LEVEL_COLOUR[L],
+                        text=[f"{v:.0f}%" if v >= 9 else "" for v in mix[L]], textposition="inside",
+                        insidetextfont=dict(color="white", size=11.5),
+                        hovertemplate="%{y}: %{x:.0f}% " + L.lower() + "<extra></extra>")
+        fig.update_layout(barmode="stack", bargap=0.35,
+                          legend=dict(orientation="h", y=-0.12, x=0, font=dict(size=12)))
+        fig.update_xaxes(visible=False, range=[0, 100])
+        plot(styled(fig, 330, legend=True))
     st.write("")
-    with card("top"):
-        st.markdown('<div class="eyebrow">Watch list</div><h3 style="margin:2px 0 8px 0">The 10 hospitals with the highest risk</h3>',
-                    unsafe_allow_html=True)
-        top = SCORES.head(10).assign(margin=lambda d: (100 * d.total_margin).round(1),
-                                     reason=lambda d: d.reason_1.str.capitalize())
-        st.dataframe(top[["risk_rank", "label", "margin", "loss_streak", "reason"]].rename(columns={
-            "risk_rank": "Rank", "label": "Hospital", "margin": "Profit margin (%)", "loss_streak": "Years losing money",
-            "reason": "Biggest reason"}), hide_index=True, use_container_width=True)
+    with card("list"):
+        top = st.columns([3, 1.3])
+        top[0].markdown(f"### Highest-risk hospitals in view")
+        top[0].markdown('<div class="muted">Select a row to open the hospital\'s profile</div>', unsafe_allow_html=True)
+        lvl = top[1].segmented_control("Show", LEVELS, default="High", key="f_level", label_visibility="collapsed")
+        t = d[d.risk_level == lvl] if lvl else d
+        table = t.assign(margin=100 * t.total_margin, why=t.reason_1.str.capitalize())[
+            ["label", "risk_level", "percentile", "margin", "loss_streak", "why"]].head(300)
+        ev = st.dataframe(
+            table, hide_index=True, use_container_width=True, height=360, on_select="rerun",
+            selection_mode="single-row", key="table",
+            column_config={
+                "label": st.column_config.TextColumn("Hospital", width="large"),
+                "risk_level": st.column_config.TextColumn("Risk"),
+                "percentile": st.column_config.ProgressColumn("Risk percentile", min_value=0, max_value=100, format="%.0f"),
+                "margin": st.column_config.NumberColumn("Profit margin", format="%.1f%%"),
+                "loss_streak": st.column_config.NumberColumn("Years losing money"),
+                "why": st.column_config.TextColumn("Biggest factor", width="medium")})
+        rows = ev.selection.rows if ev is not None else []
+        if rows:
+            open_profile(table.iloc[rows[0]].label)
     footer()
 
 
-def check():
-    st.markdown('<div class="eyebrow">Check a hospital</div><h1 style="margin-top:0">How likely is it to lose money '
-                'two years in a row?</h1>', unsafe_allow_html=True)
-    h = hospital_picker("pick_check")
-    level = h.risk_level
-    left, right = st.columns([1, 1.25])
-    with left, card("dial"):
-        st.markdown(f'<h3 style="margin:0">{h.hospital_name.title()}</h3><div class="sub">{h.hospital_type} · '
-                    f'{h.ownership} · {h.rural_urban} · {str(h.city).title()}, {h.state_abbrev} · report year '
-                    f'{int(h.fiscal_year)}</div>', unsafe_allow_html=True)
-        pct = 100 * (1 - (h.risk_rank - 1) / N)
-        fig = go.Figure(go.Indicator(
-            mode="gauge+number", value=pct, number=dict(suffix="", valueformat=".0f", font=dict(size=46)),
-            title=dict(text="risk percentile (100 = highest)", font=dict(size=13, color=INK_2)),
-            gauge=dict(axis=dict(range=[0, 100], tickvals=[0, 70, 90, 100], tickfont=dict(size=11)),
-                       bar=dict(color=INK, thickness=0.18),
-                       steps=[dict(range=[0, 70], color="#D5F2EE"), dict(range=[70, 90], color="#FCE6C4"),
-                              dict(range=[90, 100], color="#FAD2C5")], borderwidth=0)))
-        fig = fig_layout(fig, 250)
-        fig.update_layout(margin=dict(l=40, r=40, t=30, b=10))
-        st.plotly_chart(fig, use_container_width=True, config={"displayModeBar": False})
-        st.markdown(f'<div style="text-align:center">{pill(level)}&nbsp; ranked <b>#{int(h.risk_rank):,}</b> of {N:,}</div>'
-                    f'<div class="sub" style="text-align:center;margin-top:10px">Of hospitals in the <b>{level.lower()}</b> '
-                    f'group in the past, about <b>{TRACK[level]} in 100</b> lost money in both of the next two years.</div>',
-                    unsafe_allow_html=True)
-    with right, card("why"):
-        st.markdown('<div class="eyebrow">Why</div><h3 style="margin:2px 0 10px 0">What the model looked at most</h3>',
-                    unsafe_allow_html=True)
-        for k in (1, 2, 3):
-            up = bool(h[f"reason_{k}_up"])
-            arrow, colour, word = ("▲", CORAL, "raises") if up else ("▼", TEAL, "lowers")
-            st.markdown(f'<div class="reason"><span style="color:{colour};font-weight:800">{arrow}</span>&nbsp; '
-                        f'<b>{str(h[f"reason_{k}"]).capitalize()}</b> <span class="sub">{word} its risk</span></div>',
+def profile():
+    heading("Hospital profile", "Check a hospital")
+    h = hospital_search("search_profile")
+    row = h.to_dict()
+    contrib = contributions(row)
+    with card("head"):
+        c = st.columns([2.2, 1])
+        with c[0]:
+            st.markdown(f'<div style="font-size:22px;font-weight:800;color:{INK};letter-spacing:-0.02em">{h["name"]}</div>'
+                        f'<div style="margin:8px 0 2px 0"><span class="chip">{h.hospital_type}</span>'
+                        f'<span class="chip">{h.ownership}</span><span class="chip">{h.rural_urban}</span>'
+                        f'<span class="chip">{h.city}, {h.state_abbrev}</span>'
+                        f'<span class="chip">{0 if pd.isna(h.beds) else int(h.beds):,} beds</span>'
+                        f'<span class="chip">report year {int(h.fiscal_year)}</span></div>', unsafe_allow_html=True)
+        with c[1]:
+            st.markdown(f'<div style="text-align:right">{badge(h.risk_level)}'
+                        f'<div style="font-size:30px;font-weight:800;color:{INK};margin-top:6px">#{int(h.risk_rank):,}'
+                        f'<span class="muted" style="font-size:14px"> of {N:,}</span></div>'
+                        f'<div class="muted">riskier than {h.percentile:.0f}% of US hospitals</div></div>',
                         unsafe_allow_html=True)
-        c = st.columns(3)
-        c[0].metric("Profit margin", f"{100 * h.total_margin:.1f}%")
-        c[1].metric("Years in a row losing money", int(h.loss_streak))
-        c[2].metric("Days of cash", "n/a" if pd.isna(h.days_cash_on_hand) or h.days_cash_on_hand < 0
-                    else f"{h.days_cash_on_hand:.0f}")
     st.write("")
-    with card("hist"):
-        st.markdown('<div class="eyebrow">Track record</div><h3 style="margin:2px 0 6px 0">Profit margin by year</h3>',
-                    unsafe_allow_html=True)
+    c = st.columns(4)
+    kpi(c[0], "pm", "Profit margin", f"{100 * h.total_margin:.1f}%", f"US typical {100 * SCORES.total_margin.median():.1f}%",
+        CORAL if h.total_margin < 0 else TEAL)
+    kpi(c[1], "ls", "Years in a row losing money", f"{int(h.loss_streak)}",
+        "made money in its latest year" if h.loss_streak == 0 else f"up to {int(h.fiscal_year)}",
+        CORAL if h.loss_streak >= 2 else INK)
+    kpi(c[2], "pc", "Profit on patient care", show_value("operating_margin", h.operating_margin),
+        "before investment income and gifts", INK)
+    kpi(c[3], "tr", "Track record of this level", f"{TRACK[h.risk_level]} in 100",
+        f"{h.risk_level.lower()}-risk hospitals that then lost money two years (test)", LEVEL_COLOUR[h.risk_level])
+    st.write("")
+    tabs = st.tabs(["Why this score", "Profit history", "Compared with peers"])
+    with tabs[0], card("why"):
+        top = contrib.reindex(contrib.abs().sort_values(ascending=False).index).head(8)[::-1]
+        labels = [f"{META['labels'][f].capitalize()}: <b>{show_value(f, row[f])}</b>" for f in top.index]
+        fig = go.Figure(go.Bar(x=top.values, y=labels, orientation="h",
+                               marker_color=[CORAL if v > 0 else TEAL for v in top.values],
+                               hovertemplate="%{y}<extra></extra>"))
+        fig.add_vline(x=0, line_color=INK_3, line_width=1)
+        fig.update_xaxes(visible=False)
+        fig.update_yaxes(tickfont=dict(size=13))
+        st.markdown("### The factors that moved this hospital's score the most")
+        st.markdown(f'<div class="muted"><span style="color:{CORAL};font-weight:700">■ Coral</span> pushes the risk up · '
+                    f'<span style="color:{TEAL};font-weight:700">■ teal</span> pulls it down. Longer bar = bigger effect '
+                    f'(exact contributions from the model).</div>', unsafe_allow_html=True)
+        plot(styled(fig, 380))
+    with tabs[1], card("hist"):
         hh = HIST[HIST.ccn == h.ccn].sort_values("fiscal_year")
+        st.markdown("### Profit margin by year")
+        st.markdown('<div class="muted">Share of each dollar of income kept as profit. Coral = a loss.</div>',
+                    unsafe_allow_html=True)
         fig = go.Figure(go.Bar(x=hh.fiscal_year, y=100 * hh.total_margin,
                                marker_color=[CORAL if v < 0 else INDIGO for v in hh.total_margin],
-                               text=[f"{100 * v:.1f}%" for v in hh.total_margin], textposition="outside"))
-        fig.update_yaxes(ticksuffix="%", gridcolor=LINE, zerolinecolor=INK_2)
+                               text=[f"{100 * v:.1f}%" for v in hh.total_margin], textposition="outside",
+                               hovertemplate="%{x}: %{y:.1f}%<extra></extra>"))
+        fig.update_yaxes(ticksuffix="%", gridcolor=LINE, zerolinecolor=INK_3)
         fig.update_xaxes(dtick=1)
-        st.plotly_chart(fig_layout(fig, 300), use_container_width=True, config={"displayModeBar": False})
-        st.caption("Indigo = made money, coral = lost money. A margin of 5% means 5 cents of profit on each dollar.")
+        plot(styled(fig, 360))
+    with tabs[2], card("peers"):
+        peers = SCORES[(SCORES.hospital_type == h.hospital_type) & (SCORES.state_abbrev == h.state_abbrev)]
+        st.markdown(f"### Where it sits among all {N:,} hospitals")
+        st.markdown(f'<div class="muted">Each hospital\'s risk percentile. The marker shows {h["name"]}.</div>',
+                    unsafe_allow_html=True)
+        fig = go.Figure(go.Histogram(x=SCORES.percentile, nbinsx=50, marker_color=INDIGO_XL,
+                                     marker_line=dict(color=INDIGO_L, width=0.5), hoverinfo="skip"))
+        fig.add_vrect(x0=70, x1=90, fillcolor=LEVEL_BG["Elevated"], opacity=0.6, line_width=0, layer="below")
+        fig.add_vrect(x0=90, x1=100, fillcolor=LEVEL_BG["High"], opacity=0.8, line_width=0, layer="below")
+        fig.add_vline(x=h.percentile, line_color=LEVEL_COLOUR[h.risk_level], line_width=3,
+                      annotation_text=f"{h['name'][:28]}", annotation_position="top")
+        fig.update_xaxes(title="risk percentile (100 = highest risk)", range=[0, 100])
+        fig.update_yaxes(visible=False)
+        plot(styled(fig, 260))
+        c = st.columns(3)
+        c[0].metric(f"{h.hospital_type} hospitals in {h.state_abbrev}", f"{len(peers):,}")
+        c[1].metric("Their typical profit margin", f"{100 * peers.total_margin.median():.1f}%")
+        c[2].metric("Share of them at high risk", f"{100 * (peers.risk_level == 'High').mean():.0f}%")
     footer()
 
 
-def what_if():
-    st.markdown('<div class="eyebrow">What if?</div><h1 style="margin-top:0">Change the numbers and watch the risk move</h1>'
-                '<div class="sub">Pick a hospital, then move the sliders. The model re-scores it instantly.</div>',
-                unsafe_allow_html=True)
-    h = hospital_picker("pick_whatif")
+SCENARIOS = {
+    "Break even this year": lambda r: {"total_margin": max(r["total_margin"], 0.0),
+                                       "operating_margin": max(r["operating_margin"] or 0, 0.0)},
+    "Cut agency staff in half": lambda r: {"contract_labor_pct": (r["contract_labor_pct"] or 0) / 2},
+    "Add 30 days of cash": lambda r: {"days_cash_on_hand": max(r["days_cash_on_hand"] or 0, 0) + 30},
+    "Lose 5 more cents per dollar": lambda r: {"total_margin": r["total_margin"] - 0.05,
+                                               "operating_margin": (r["operating_margin"] or 0) - 0.05},
+}
+
+
+def simulator():
+    heading("Scenario simulator", "What would change the outlook?",
+            "Pick a hospital, try a scenario or move the sliders. The model re-scores the hospital instantly.")
+    h = hospital_search("search_sim")
     base = h.to_dict()
+    key = f"sim_{h.ccn}"
+    defaults = {"m": round(100 * base["total_margin"], 1),
+                "o": round(100 * (base["operating_margin"] if pd.notna(base["operating_margin"]) else 0), 1),
+                "c": float(round(min(max(base["days_cash_on_hand"] if pd.notna(base["days_cash_on_hand"]) else 0, 0), 365))),
+                "a": round(100 * (base["contract_labor_pct"] if pd.notna(base["contract_labor_pct"]) else 0), 1)}
+    for k, v in defaults.items():
+        st.session_state.setdefault(key + k, v)
     st.write("")
-    left, right = st.columns([1.2, 1])
-    with left, card("sliders"):
-        st.markdown('<h3 style="margin:0 0 6px 0">Adjust this year\'s numbers</h3>', unsafe_allow_html=True)
-        key = f"wi_{h.ccn}"
-        m = st.slider("Profit margin this year (%)", -40.0, 40.0, float(round(100 * base["total_margin"], 1)), 0.5,
-                      key=key + "m") / 100
-        om = st.slider("Profit on patient care (%)", -60.0, 40.0,
-                       float(round(100 * (base["operating_margin"] if pd.notna(base["operating_margin"]) else 0), 1)),
-                       0.5, key=key + "o") / 100
-        cash_default = float(base["days_cash_on_hand"]) if pd.notna(base["days_cash_on_hand"]) else 0.0
-        cash = st.slider("Days of cash in the bank", 0.0, 365.0, float(min(max(cash_default, 0), 365)), 1.0, key=key + "c")
-        agency = st.slider("Agency staff, % of salaries", 0.0, 40.0,
-                           float(round(100 * (base["contract_labor_pct"] if pd.notna(base["contract_labor_pct"]) else 0), 1)),
-                           0.5, key=key + "a") / 100
-    row = dict(base)
-    row.update(total_margin=m, operating_margin=om, days_cash_on_hand=cash, contract_labor_pct=agency)
-    row["loss"] = int(m < 0)
+    left, right = st.columns([1.1, 1])
+    with left, card("controls"):
+        st.markdown("### Try a scenario")
+        cols = st.columns(2)
+        for i, (name, fn) in enumerate(SCENARIOS.items()):
+            if cols[i % 2].button(name, key=f"{key}_s{i}", use_container_width=True):
+                cur = dict(base, total_margin=st.session_state[key + "m"] / 100,
+                           operating_margin=st.session_state[key + "o"] / 100,
+                           days_cash_on_hand=st.session_state[key + "c"],
+                           contract_labor_pct=st.session_state[key + "a"] / 100)
+                ch = fn(cur)
+                if "total_margin" in ch:
+                    st.session_state[key + "m"] = float(np.clip(round(100 * ch["total_margin"], 1), -40, 40))
+                if "operating_margin" in ch:
+                    st.session_state[key + "o"] = float(np.clip(round(100 * ch["operating_margin"], 1), -60, 40))
+                if "days_cash_on_hand" in ch:
+                    st.session_state[key + "c"] = float(min(ch["days_cash_on_hand"], 365))
+                if "contract_labor_pct" in ch:
+                    st.session_state[key + "a"] = float(round(100 * ch["contract_labor_pct"], 1))
+                st.rerun()
+        if st.button("Reset to reported numbers", key=f"{key}_reset", type="tertiary", icon=":material/restart_alt:"):
+            for k, v in defaults.items():
+                st.session_state[key + k] = v
+            st.rerun()
+        st.markdown("### Or adjust the numbers")
+        m = st.slider("Profit margin this year", -40.0, 40.0, step=0.5, key=key + "m", format="%.1f%%")
+        om = st.slider("Profit on patient care", -60.0, 40.0, step=0.5, key=key + "o", format="%.1f%%")
+        cash = st.slider("Days of cash in the bank", 0.0, 365.0, step=1.0, key=key + "c", format="%.0f days")
+        agency = st.slider("Agency staff, share of salaries", 0.0, 40.0, step=0.5, key=key + "a", format="%.1f%%")
+    row = dict(base, total_margin=m / 100, operating_margin=om / 100, days_cash_on_hand=cash,
+               contract_labor_pct=agency / 100, loss=int(m < 0))
     if m >= 0:
         row["loss_streak"] = 0
-    elif base["loss"] == 0:        # a new loss: one year, or two if last year was a loss too
+    elif base["loss"] == 0:
         row["loss_streak"] = 2 if (pd.notna(base["margin_last_year"]) and base["margin_last_year"] < 0) else 1
     if pd.notna(base["margin_last_year"]):
-        row["margin_change"] = m - base["margin_last_year"]
+        row["margin_change"] = m / 100 - base["margin_last_year"]
     before, after = predict(base), predict(row)
-    lv_before, lv_after = level_of(before), level_of(after)
-    with right, card("result"):
-        st.markdown('<h3 style="margin:0 0 10px 0">Result</h3>', unsafe_allow_html=True)
+    pb, pa = percentile_of(before), percentile_of(after)
+    lb, la = level_of(before), level_of(after)
+    with right, card("outcome"):
+        st.markdown("### Outlook")
         c = st.columns(2)
-        c[0].markdown(f'<div class="kpi-lab">As reported</div>{pill(lv_before)}', unsafe_allow_html=True)
-        c[1].markdown(f'<div class="kpi-lab">With your changes</div>{pill(lv_after)}', unsafe_allow_html=True)
-        rank_after = int((SCORES.risk > after).sum()) + 1
-        st.markdown(f'<div class="big" style="margin-top:14px;color:{LEVEL_COLOUR[lv_after]}">#{rank_after:,}'
-                    f'<span class="sub" style="font-size:16px"> of {N:,}</span></div>'
-                    f'<div class="sub">new place in the risk ranking (was #{int(h.risk_rank):,})</div>',
-                    unsafe_allow_html=True)
-        fig = go.Figure(go.Bar(x=["As reported", "With your changes"], y=[100 * before, 100 * after],
-                               marker_color=[INDIGO_L, LEVEL_COLOUR[lv_after]],
-                               text=[f"{100 * before:.0f}", f"{100 * after:.0f}"], textposition="outside"))
-        fig.update_yaxes(visible=False, range=[0, max(100 * max(before, after) * 1.35, 10)])
-        st.plotly_chart(fig_layout(fig, 220), use_container_width=True, config={"displayModeBar": False})
-        st.caption("Bars show the model's raw score (0-100). Use it to compare, not as an exact chance: the risk "
-                   "level is the reliable part.")
+        c[0].markdown(f'<div class="muted">As reported</div>{badge(lb)}', unsafe_allow_html=True)
+        c[1].markdown(f'<div class="muted">With your changes</div>{badge(la)}', unsafe_allow_html=True)
+        fig = go.Figure(go.Indicator(
+            mode="gauge+number", value=pa, number=dict(valueformat=".0f", font=dict(size=44, color=INK)),
+            title=dict(text="risk percentile (100 = highest)", font=dict(size=12.5, color=INK_2)),
+            gauge=dict(axis=dict(range=[0, 100], tickvals=[0, 70, 90, 100], tickfont=dict(size=11)),
+                       bar=dict(color=LEVEL_COLOUR[la], thickness=0.28),
+                       steps=[dict(range=[0, 70], color=LEVEL_BG["Lower"]), dict(range=[70, 90], color=LEVEL_BG["Elevated"]),
+                              dict(range=[90, 100], color=LEVEL_BG["High"])],
+                       threshold=dict(line=dict(color=INK_3, width=3), thickness=0.9, value=pb), borderwidth=0)))
+        fig.update_layout(margin=dict(l=40, r=40, t=40, b=10))
+        plot(styled(fig, 280))
+        moved = "no change" if abs(pa - pb) < 0.5 else (f"{pa - pb:+.0f} percentile points")
+        st.markdown(f'<div class="sub" style="text-align:center">Grey marker = as reported · <b>{moved}</b><br>'
+                    f'In the test, {TRACK[la]} in 100 hospitals at the <b>{la.lower()}</b> level lost money in both of '
+                    f'the next two years.</div>', unsafe_allow_html=True)
     footer()
 
 
-def watch_list():
-    st.markdown('<div class="eyebrow">Watch list</div><h1 style="margin-top:0">Hospitals most likely to struggle in '
-                '2024-2025</h1>', unsafe_allow_html=True)
-    with card("filters"):
-        c = st.columns([1, 1, 1, 1])
-        lv = c[0].multiselect("Risk level", ["High", "Elevated", "Lower"], default=["High"])
-        states = c[1].multiselect("State", sorted(SCORES.state_abbrev.unique()))
-        owner = c[2].multiselect("Owner", sorted(SCORES.ownership.astype(str).unique()))
-        area = c[3].multiselect("Rural or urban", sorted(SCORES.rural_urban.astype(str).unique()))
-    d = SCORES[SCORES.risk_level.isin(lv or ["High", "Elevated", "Lower"])]
-    if states:
-        d = d[d.state_abbrev.isin(states)]
-    if owner:
-        d = d[d.ownership.astype(str).isin(owner)]
-    if area:
-        d = d[d.rural_urban.astype(str).isin(area)]
-    out = d.assign(margin=(100 * d.total_margin).round(1), reason=d.reason_1.str.capitalize())[
-        ["risk_rank", "risk_level", "hospital_name", "city", "state_abbrev", "hospital_type", "ownership", "rural_urban",
-         "margin", "loss_streak", "reason"]].rename(columns={
-        "risk_rank": "Rank", "risk_level": "Risk", "hospital_name": "Hospital", "city": "City", "state_abbrev": "State",
-        "hospital_type": "Type", "ownership": "Owner", "rural_urban": "Area", "margin": "Profit margin (%)",
-        "loss_streak": "Years losing money", "reason": "Biggest reason"})
+def compare():
+    heading("Compare", "Compare hospitals side by side",
+            "Pick up to four hospitals, for example a hospital and its local competitors.")
+    labels = SCORES.label.tolist()
+    cur = current_hospital()
+    same = SCORES[SCORES.state_abbrev == SCORES.loc[SCORES.label == cur, "state_abbrev"].iloc[0]].label.head(3).tolist()
+    default = list(dict.fromkeys([cur] + same))[:3]
+    picks = st.multiselect("Hospitals", labels, default=default, max_selections=4, label_visibility="collapsed")
+    if not picks:
+        st.info("Pick at least one hospital.")
+        return
+    d = SCORES.set_index("label").loc[picks].reset_index()
+    cols = st.columns(len(d))
+    for i, (col, (_, h)) in enumerate(zip(cols, d.iterrows())):
+        with col, card(f"cmp{i}"):
+            st.markdown(f'<div style="font-weight:800;font-size:15.5px;color:{INK};min-height:44px">{h["name"]}</div>'
+                        f'<div class="muted" style="margin-bottom:8px">{h.city}, {h.state_abbrev} · {h.ownership}</div>'
+                        f'{badge(h.risk_level)}<div style="font-size:26px;font-weight:800;margin-top:8px">#{int(h.risk_rank):,}'
+                        f'<span class="muted"> of {N:,}</span></div>', unsafe_allow_html=True)
+            st.markdown(f'<div class="sub">Profit margin <b>{100 * h.total_margin:.1f}%</b><br>'
+                        f'Years losing money <b>{int(h.loss_streak)}</b><br>'
+                        f'Days of cash <b>{show_value("days_cash_on_hand", h.days_cash_on_hand)}</b><br>'
+                        f'Biggest factor <b>{str(h.reason_1)}</b></div><div style="height:6px"></div>', unsafe_allow_html=True)
     st.write("")
-    with card("table"):
-        st.markdown(f"**{len(out):,} hospitals**")
-        st.dataframe(out, hide_index=True, use_container_width=True, height=520)
-        st.download_button("Download this list (CSV)", out.to_csv(index=False).encode(), "hospital_watch_list.csv",
-                           "text/csv")
+    with card("cmp_hist"):
+        st.markdown("### Profit margin over time")
+        fig = go.Figure()
+        palette = [INDIGO, CORAL, TEAL, AMBER]
+        for i, (_, h) in enumerate(d.iterrows()):
+            hh = HIST[HIST.ccn == h.ccn].sort_values("fiscal_year")
+            fig.add_scatter(x=hh.fiscal_year, y=100 * hh.total_margin, mode="lines+markers", name=h["name"][:34],
+                            line=dict(color=palette[i], width=3, shape="spline"), marker=dict(size=6))
+        fig.add_hline(y=0, line_color=INK_3, line_width=1)
+        fig.update_yaxes(ticksuffix="%", gridcolor=LINE, zeroline=False)
+        fig.update_xaxes(dtick=1)
+        fig.update_layout(legend=dict(orientation="h", y=-0.15))
+        plot(styled(fig, 360, legend=True))
     footer()
 
 
-def evidence():
-    st.markdown('<div class="eyebrow">How good is it?</div><h1 style="margin-top:0">Tested on years it never saw</h1>'
-                '<div class="sub">The model was trained on reports up to 2019 and then asked about 2021 reports: which '
-                'hospitals would lose money in both 2022 and 2023? I compared it with rules a manager could use without '
-                'a model.</div>', unsafe_allow_html=True)
-    rows = [("Machine learning (XGBoost)", P("XGBoost"), INDIGO),
-            ("Rule: already lost money 2 years running", P("Rule: lost money 2+ years in a row"), "#B7AFA3"),
-            ("Logistic regression", P("Logistic regression"), INDIGO_L),
-            ("Rule: thinnest profit margin first", P("Rule: lowest profit margin first"), "#B7AFA3")]
+def performance():
+    heading("Model performance", "How well does it work?",
+            "Trained only on older years, then asked about years it had never seen, the way it would be used for real. "
+            "Compared with rules a manager could use without a model.")
+    b = BT[BT.group == "All hospitals"]
+    c = st.columns(4)
+    kpi(c[0], "p1", "High-risk picks that were right", f"{HIT} in 100", "2021 reports, outcome 2022-2023", INDIGO)
+    kpi(c[1], "p2", "Best rule of thumb", f"{round(100 * MAIN.loc['Rule: lost money 2+ years in a row', 'precision_top'])} in 100",
+        "already lost money 2 years running", INK)
+    hm, hr = int(EARLY.loc["XGBoost", "hits"]), int(EARLY.loc["Rule: lowest profit margin first", "hits"])
+    kpi(c[2], "p3", "Early warnings caught", f"+{hm - hr}", f"{hm} vs {hr} among hospitals still making money", TEAL)
+    kpi(c[3], "p4", "Ranking accuracy (ROC-AUC)", f"{MAIN.loc['XGBoost', 'roc_auc']:.2f}",
+        f"best rule {MAIN.drop(index=['XGBoost', 'Logistic regression']).roc_auc.max():.2f} · 0.5 = guessing", INK)
     st.write("")
-    left, right = st.columns(2)
-    with left, card("ev1"):
-        st.markdown('<h3 style="margin:0">Of the 10% it flagged, how many did lose money both years?</h3>',
+    left, right = st.columns([1.25, 1])
+    with left, card("perf_years"):
+        st.markdown("### Right picks in the top 10%, every test year")
+        st.markdown('<div class="muted">Share of flagged hospitals that went on to lose money in both of the next two years</div>',
                     unsafe_allow_html=True)
-        fig = go.Figure(go.Bar(y=[r[0] for r in rows][::-1], x=[r[1] for r in rows][::-1], orientation="h",
-                               marker_color=[r[2] for r in rows][::-1], text=[f"{r[1]} in 100" for r in rows][::-1],
-                               textposition="outside"))
-        fig.update_xaxes(visible=False, range=[0, 100])
-        st.plotly_chart(fig_layout(fig, 300), use_container_width=True, config={"displayModeBar": False})
-        st.caption(f"Across all hospitals, {round(100 * MAIN.loc['XGBoost', 'base_rate'])} in 100 lost money in both 2022 and 2023.")
-    with right, card("ev2"):
-        st.markdown('<h3 style="margin:0">Early warning: hospitals still making money</h3>', unsafe_allow_html=True)
-        hm, hr = int(EARLY.loc["XGBoost", "hits"]), int(EARLY.loc["Rule: lowest profit margin first", "hits"])
-        fig = go.Figure(go.Bar(x=["Machine learning", "Best simple rule"], y=[hm, hr],
-                               marker_color=[INDIGO, "#B7AFA3"], text=[str(hm), str(hr)], textposition="outside"))
-        fig.update_yaxes(visible=False, range=[0, hm * 1.25])
-        st.plotly_chart(fig_layout(fig, 300), use_container_width=True, config={"displayModeBar": False})
-        st.caption(f"{int(EARLY.loc['XGBoost', 'n']):,} hospitals made money in 2021. Each method picked "
-                   f"{int(EARLY.loc['XGBoost', 'flagged'])} of them; bars show how many then lost money in both 2022 "
-                   f"and 2023. The model caught {hm - hr} more.")
+        names = {"XGBoost": ("Machine learning", INDIGO, 4), "Rule: lost money 2+ years in a row": ("Rule: already losing 2 years", "#B7AFA3", 2.5),
+                 "Logistic regression": ("Logistic regression", INDIGO_L, 2.5), "Rule: lowest profit margin first": ("Rule: thinnest margin", "#D8D2C8", 2.5)}
+        fig = go.Figure()
+        for mname, (lab, colr, w) in names.items():
+            s = b[b.model == mname].sort_values("test_year")
+            fig.add_scatter(x=s.test_year.astype(str) + " report", y=100 * s.precision_top, name=lab, mode="lines+markers",
+                            line=dict(color=colr, width=w), marker=dict(size=8),
+                            hovertemplate=lab + ": %{y:.0f} in 100<extra></extra>")
+        base = b[b.model == "XGBoost"].sort_values("test_year")
+        fig.add_bar(x=base.test_year.astype(str) + " report", y=100 * base.base_rate, name="All hospitals (base rate)",
+                    marker_color="#EEEDF6", hovertemplate="base rate %{y:.0f} in 100<extra></extra>")
+        fig.update_yaxes(ticksuffix="%", gridcolor=LINE, range=[0, 80])
+        fig.update_layout(legend=dict(orientation="h", y=-0.18))
+        plot(styled(fig, 380, legend=True))
+    with right, card("perf_levels"):
+        st.markdown("### What each risk level meant")
+        st.markdown('<div class="muted">2021 test: share that lost money in both of the next two years</div>',
+                    unsafe_allow_html=True)
+        fig = go.Figure(go.Bar(x=[f"{L}" for L in LEVELS], y=[TRACK[L] for L in LEVELS],
+                               marker_color=[LEVEL_COLOUR[L] for L in LEVELS],
+                               text=[f"{TRACK[L]} in 100" for L in LEVELS], textposition="outside"))
+        fig.update_yaxes(visible=False, range=[0, 90])
+        plot(styled(fig, 380))
     st.write("")
-    with card("ev3"):
-        st.markdown('<h3 style="margin:0 0 6px 0">What each risk level meant in the test</h3>', unsafe_allow_html=True)
-        c = st.columns(3)
-        for col, (lvl, n) in zip(c, TRACK.items()):
-            col.markdown(f'{pill(lvl)}<div class="kpi-num" style="color:{LEVEL_COLOUR[lvl]};margin-top:8px">{n} in 100</div>'
-                         f'<div class="kpi-lab">lost money in both of the next two years</div>', unsafe_allow_html=True)
-    st.write("")
-    with card("ev4"):
+    with card("method"):
         st.markdown(f"""
-**How it works, in brief**
-
-- **Data:** the yearly financial report every Medicare hospital files (CMS Hospital Provider Cost Reports, 2011-2023),
-  about 4,300 hospitals a year, cleaned in PostgreSQL.
-- **Question:** from one year's report, will the hospital lose money in *both* of the next two years?
-- **Signals (37):** profit this year and the two before, profit on patient care, years in a row losing money,
-  income from investments and gifts, cash, debt, costs, agency staff, staffing, patient mix, size, and how the
-  state and the country are doing.
-- **Model:** XGBoost (gradient-boosted decision trees). Settings chosen on 2017-2018 only.
-- **Tests:** 2019, 2020 and 2021 reports, each predicted by a model trained only on earlier years. The model ranked
-  hospitals best in all three (ROC-AUC {AUC.loc["XGBoost", "min"]:.2f}-{AUC.loc["XGBoost", "max"]:.2f}, the best
-  rule {AUC.drop(index=["XGBoost", "Logistic regression"])["min"].min():.2f}-{AUC.drop(index=["XGBoost", "Logistic regression"])["max"].max():.2f}).
-- **Reasons:** SHAP values show which signals pushed each hospital's score up or down.
+### Method in brief
+- **Data:** the yearly financial report of every Medicare hospital (CMS Hospital Provider Cost Reports, 2011-2023),
+  cleaned and checked in PostgreSQL; 46,946 hospital-years with a known outcome.
+- **Target:** lost money in *both* of the next two years.
+- **Signals ({len(FEATURES)}):** profit this year and the two before, profit on patient care, loss streak, income from
+  investments and gifts, cash, debt, costs, agency staff, staffing, patient mix, size, and the state and national picture.
+- **Model:** XGBoost, settings chosen on 2017-2018 only; backtests on 2019, 2020 and 2021 reports.
+- **Explanations:** exact per-factor contributions from the trees (the same idea as SHAP).
 - **Limits:** hospitals that close stop filing, so closures are not counted; scores drift with the economy, so the app
-  shows risk levels rather than exact chances.
+  shows risk levels with their track record instead of exact chances.
 """)
     footer()
 
 
-pages = [st.Page(home, title="Overview", icon="🏠", default=True),
-         st.Page(check, title="Check a hospital", icon="🔎"),
-         st.Page(what_if, title="What if?", icon="🎚️"),
-         st.Page(watch_list, title="Watch list", icon="📋"),
-         st.Page(evidence, title="How good is it?", icon="✅")]
+PAGES = {
+    "overview": st.Page(overview, title="Overview", icon=":material/space_dashboard:", default=True),
+    "profile": st.Page(profile, title="Hospital profile", icon=":material/local_hospital:"),
+    "simulator": st.Page(simulator, title="Scenario simulator", icon=":material/tune:"),
+    "compare": st.Page(compare, title="Compare", icon=":material/compare_arrows:"),
+    "performance": st.Page(performance, title="Performance", icon=":material/verified:"),
+}
 with st.sidebar:
-    st.markdown(f'<div style="font-weight:800;font-size:19px;color:{INK};line-height:1.2">Hospital Financial<br>'
-                f'<span style="color:{INDIGO}">Distress Forecast</span></div>'
-                f'<div class="sub" style="margin:6px 0 4px 0">Machine learning early warning for {N:,} US hospitals</div>',
+    st.markdown(f'<div class="brand">{LOGO}<div class="brand-name">Hospital Distress<br><span>Forecast</span></div></div>',
                 unsafe_allow_html=True)
-    st.markdown('<div class="sub" style="margin:10px 0 6px 0">Built by <b>Isaac Agyapong</b> · M.S. Data Science, '
-                'Florida Poly</div>', unsafe_allow_html=True)
-st.navigation(pages, position="sidebar").run()
+st.navigation(list(PAGES.values()), position="sidebar").run()

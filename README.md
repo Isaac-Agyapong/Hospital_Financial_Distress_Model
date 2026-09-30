@@ -21,8 +21,8 @@ a hospital up and see why it scored the way it did.
 > - **Right now:** based on each hospital's latest report, **446 hospitals** (the top 10%) are at high risk for
 >   2024-2025. For-profit city hospitals are most often on the list; small rural "critical access" hospitals, which
 >   Medicare pays based on their costs, rarely are.
-> - **The app** shows each hospital's risk level, its rank, the top reasons behind the score, and a "What if?" page
->   where you can change its numbers and watch the risk move.
+> - **The app** lets anyone filter the country, click into any hospital, see exactly what drives its score, try
+>   "what if" scenarios, and compare hospitals side by side.
 
 The sections below go into technical detail.
 
@@ -96,17 +96,21 @@ care, staffing, size, cash and agency staff costs. Each hospital's top three rea
 
 ## Live app
 
-Five pages, built with Streamlit and Plotly:
+Five pages, built with Streamlit and Plotly, designed as a product rather than a report:
 
-1. **Overview:** how many hospitals are at high, elevated and lower risk; a US map of the share at high risk; the top 10.
-2. **Check a hospital:** search any hospital; see its risk percentile, level, rank, top 3 reasons and profit history.
-3. **What if?:** move sliders (profit, profit on patient care, cash, agency staff) and the model re-scores it instantly.
-4. **Watch list:** filter by risk level, state, owner and rural or urban; download the list.
-5. **How good is it?:** the test results above in plain words.
+1. **Overview:** filter chips (state, hospital type, owner, rural or urban) drive every number and chart. Click a state
+   on the map to focus on it; click a hospital in the list to open its profile.
+2. **Hospital profile:** risk level, rank and percentile, then tabs for **why this score** (the exact factors that
+   pushed this hospital's risk up or down, with its real values), **profit history** and **comparison with peers**.
+3. **Scenario simulator:** one-click scenarios ("Break even this year", "Cut agency staff in half", "Add 30 days of
+   cash") or sliders; the model re-scores the hospital instantly and the gauge shows the move.
+4. **Compare:** up to four hospitals side by side, with their profit margins over time.
+5. **Performance:** the test results above, across every test year.
 
 | | |
 |---|---|
-| ![Check a hospital](Image/app_check.png) | ![What if](Image/app_what_if.png) |
+| ![Hospital profile](Image/app_profile.png) | ![Scenario simulator](Image/app_simulator.png) |
+| ![Compare](Image/app_compare.png) | ![Performance](Image/app_performance.png) |
 
 Run it locally: `pip install -r app/requirements.txt`, then `streamlit run app/app.py`.
 
@@ -118,7 +122,9 @@ Run it locally: `pip install -r app/requirements.txt`, then `streamlit run app/a
 - **SQL (PostgreSQL):** feature engineering with window functions (`LAG`, `LEAD`, `row_number` gaps-and-islands),
   `percentile_cont`, CTEs; the label built without leaking future information into features.
 - **Python:** pandas, scikit-learn, xgboost, shap, a notebook built with nbformat and executed so outputs show on GitHub.
-- **App:** Streamlit multi-page app with custom CSS, Plotly map, gauge and charts, live re-scoring with the saved model.
+- **App:** Streamlit multi-page app with custom CSS, filters that drive every chart, click-through from the map and
+  table (Plotly and dataframe selection events), live re-scoring and per-hospital explanations from the saved XGBoost
+  model (`pred_contribs`), scenario buttons tied to session state.
 
 ## Project structure
 
