@@ -164,4 +164,4 @@ Without a database, `Data/model_panel.csv.gz` is included, so steps 2 and 3 can 
 
 ---
 
-Built by **Isaac Agyapong** · M.S. Data Science, Florida Polytechnic University · [GitHub](https://github.com/Isaac-Agyapong)
+Built by **Isaac Agyapong** · [GitHub](https://github.com/Isaac-Agyapong)
